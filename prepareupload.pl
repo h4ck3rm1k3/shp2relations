@@ -119,17 +119,98 @@ sub post_process_way
 }
 
 
+##### we look for two in a row.. cannot have that
+my %seenfilter;
+sub checkfordups
+{
+    my @way=@_;
+    my $last;
+    my $fail=0;
+    my $count=0;
+    my $size=$#way + 1;
+
+    ### now check 
+    foreach my $nd (@way)
+    {
+	if ($last)
+	{
+	    if(($count > 4) and ($count < $size -3))
+	    {
+		if ($seenfilter{"${nd}|${last}"}++)
+		{
+		    # we have seen pair in reverse, bail
+		    #	return;
+		    $fail=1;
+		}
+		
+		if ($seenfilter{"${last}|${nd}"}++)
+		{
+		    #	$fail=1;
+		}	
+	    }
+	}
+	$last=$nd;	
+	$count++;
+    }
+    return $fail;
+}
+
 #mapping of old ways onto new
 my %waymapping;
+
+=head2
+    finish_way (way_id, [@runlist])
+
+    this is called when we have a finished set of nodes in a run (contigious) along a way
+    that all have the same set of attributes, they dont need any more cutting.
+    
+    returns the newid, so we can append the trailing bits
+
+=cut
+
 
 sub finish_way
 {
     my $wayid=shift;
     my $runlist=shift;
+    my $tag =shift;
+    #remove duplicates from the ways 
+    my @newlist = @{$runlist};
 
-    my $runstring= join (",",sort {$a <=> $b} @{$runlist});
+    if (checkfordups(@newlist))
+    {
+	# we want the leftovers of the way that are not there
+	# there are some cases where the last segment is need
+
+	my @part = @newlist[-2,-1];
+	if ($#newlist >3)
+	{
+	    if (!checkfordups(@part))
+	    {
+		@newlist=@part;
+	    }
+	    else
+	    {
+		return;
+	    }
+	}
+	else
+	{
+	    #too short
+	}
+    }
+
+
+
+    my $runstring= join (",",sort {$a <=> $b} @newlist);
 #    print "Last Run was connected to " . join (",",@last) . "\n";
     # run string
+    if ( $#newlist == 0)
+    {
+#	warn "only 1 object";
+	return;
+    }
+
     if ($waystring{$runstring})
     {
 	# we have done this one.
@@ -144,11 +225,10 @@ sub finish_way
 	print "Run Finished (" . $runstring . ")\n" if $debug;
 
 	# now put the nodes on the new way....
-	push @{$ways{$newids}->{nodes}},@{$runlist};
-
+	push @{$ways{$newids}->{nodes}},@newlist;
     }
 
-
+    return $newids;
 }
 
 # post process the way
@@ -156,33 +236,42 @@ sub post_process_way_end
 {
     my $rel  =shift;
     my $wayid=shift;
-
     print "looking at way $wayid\n" if $debug;
-
     my @last;
-
     my @run; # a run of nodes in the same context
+    my $tag="";
+
+    my $segment=0;
+
+    my $lastnode=0;
 
     foreach my $nd (@{$ways{$wayid}->{nodes}})
     {
-	my @others =@{$nodesways{$nd}};
-	if (!@last)
+	my @others =@{$nodesways{$nd}}; # get a list of ways connecting to the node
+	if (!@last) # we are at the first in the list
 	{
 	    @last=@others; # the first one
+	    $tag="first";
 	}
+	push @run,$nd;
 
-	if (@last != @others)
+	if (@last != @others) # skip over the first one
 	{
+
 #### EMIT THE LAST RUN
 ##TODO ----------
-	    finish_way ($wayid,\@run);
-
+	    finish_way ($wayid,\@run,$tag); # finish the run list
+	    $segment++;
+	    $tag = "segment $segment";
 #######################################
 	    ### new run starting
 	    print "Last Run:connected to " . join (",",@last) . "\n" if $debug;
-
 	    print "Starting new run\n" if $debug;
+	    # get the last from the old run
+	    my $last = pop @run; #
 	    @run=();
+	    push @run,$last;
+## reporting
 	    if ($#others > 0)
 	    {
 		# many others
@@ -210,16 +299,13 @@ sub post_process_way_end
 
 	###
 #	print "NODE $nd is connected to " . join (",",@others) . "\n";	
-	push @run,$nd;
-
-
 	@last=@others;
     }
 
 
     #########################
     print "Finish up run\n" if $debug;
-    finish_way ($wayid,\@run);
+    finish_way ($wayid,\@run, "last");
    
     print "way done $wayid\n" if $debug;
 
@@ -527,6 +613,7 @@ sub emitnode
 ########################################################
 ### now output the doc 
 print "<osm version='0.6'>\n";
+
 foreach my $rel (keys %{rels})
 {
 #    warn "emit $rel\n";
@@ -545,6 +632,8 @@ foreach my $rel (keys %{rels})
 	    if (!$seen{$newway}++) 
 	    {
 		warn "found new way $newway" if $debug;
+#		if (!$fail)
+		{
 
 		foreach my $nd (@{$ways{$newway}->{nodes}})
 		{
@@ -565,6 +654,7 @@ foreach my $rel (keys %{rels})
 		}
 		print "<tag k='is_in:country' v='Colombia'/>";
 		print "</way>";
+		}
 
 	    }
 	    else
