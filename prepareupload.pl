@@ -206,7 +206,7 @@ sub finish_way
     if ($waystring{$runstring})
     {
 	# we have done this one.
-	print "Duplicate (" . $runstring . ")\n" if $debug;
+	warn "Duplicate (" . $runstring . ")\n" if $debug;
 	push @{$waymapping{$wayid}},$waystring{$runstring}; # push the id as a replacement for the old string
     }
     else
@@ -214,7 +214,7 @@ sub finish_way
 	$newids--; # allocate a new id.
 	push @{$waymapping{$wayid}},$newids; # map the old id onto the new
 	$waystring{$runstring}=$newids; # give this new way an id
-	print "Run Finished (" . $runstring . ")\n" if $debug;
+	warn "Run Finished (" . $runstring . ")\n" if $debug;
 
 	# now put the nodes on the new way....
 	push @{$ways{$newids}->{nodes}},@newlist;
