@@ -19,28 +19,32 @@ my %tags; # store the tags
 my $newids = -3000000; # we give new objects ids starting here
 my $current_way;
 my $debug=1;
-
-#my $current_parent_way; # when we split the way, keep track of where they came from
-
-# reprocessing 
-# we need to store all the ways after the first pass because we dont want to have to cut a way twice.
-# 
-
-
-
+my %ways;
+my %waystring;
 # just store the last node seen an used that.
 my $last_node_seen=0;
+my %rels; # the relationships
+#mapping of old ways onto new
+my %waymapping;
+
+##### we look for two in a row.. cannot have that
+my %seenfilter;
+my $QUOTE="[\\'\\\"]";
+my %seen; # what have we emitted
 
 sub begin_way
 {
     my $id=shift;
     $current_way = $id;
-
+    warn "setting current way:$current_way" if $debug;
     $last_node_seen=0;
 }
 
 sub end_way
 {
+    warn "closing current way:$current_way" if $debug;
+    warn "Way $current_way contains" . join (",",@{$ways{$current_way}->{nodes}}) . "\n" if $debug;
+
     $current_way=undef;
     $last_node_seen=0;
 }
@@ -53,17 +57,10 @@ sub checksum
     return int($checksum);
 }
 
-my %ways;
-
-my %waystring;
-
-
 sub post_process_way
 {
     my $rel  =shift;
-    my $wayid =shift || carp "No way";
-
-
+    my $wayid =shift || die carp "No way";
     if ($ways{$wayid}->{relationship})
     {
 	die "way $wayid already in rel";
@@ -74,15 +71,10 @@ sub post_process_way
     }
 }
 
-
-
-##### we look for two in a row.. cannot have that
-my %seenfilter;
 sub checkpair
 {
     my $first=shift;
     my $second=shift;
-
     if ($first > $second)
     {
 	my $t=$second;
@@ -99,20 +91,12 @@ sub checkpair
     return 1;
 }
 
-#mapping of old ways onto new
-my %waymapping;
-
 =head2
     finish_way (way_id, [@runlist])
-
     this is called when we have a finished set of nodes in a run (contigious) along a way
-    that all have the same set of attributes, they dont need any more cutting.
-    
+    that all have the same set of attributes, they dont need any more cutting.    
     returns the newid, so we can append the trailing bits
-
 =cut
-
-
 sub finish_way
 {
     my $wayid=shift;
@@ -129,7 +113,6 @@ sub finish_way
 #	warn "only 1 object";
 	return;
     }
-
     if ($waystring{$runstring})
     {
 	# we have done this one.
@@ -141,12 +124,10 @@ sub finish_way
 	$newids--; # allocate a new id.
 	push @{$waymapping{$wayid}},$newids; # map the old id onto the new
 	$waystring{$runstring}=$newids; # give this new way an id
-	warn "Run Finished (" . $runstring . ")\n" if $debug;
-
+	warn "Run in way $wayid Finished (" . $runstring . ")\n" if $debug;
 	# now put the nodes on the new way....
 	push @{$ways{$newids}->{nodes}},@newlist;
     }
-
     return $newids;
 }
 
@@ -159,15 +140,11 @@ sub post_process_way_end
     my @last;
     my @run; # a run of nodes in the same context
     my $tag="";
-
     my $segment=0;
-
     my $lastnode=0;
-
     foreach my $nd (@{$ways{$wayid}->{nodes}})
     {
 	my @others = ();
-
 	if (!$nd)
 	{
 	    warn "no node";
@@ -177,17 +154,13 @@ sub post_process_way_end
 	    @others = @{$nodesways{$nd}}; # get a list of ways connecting to the node
 	    push @run,$nd;
 	}
-
 	if (!@last) # we are at the first in the list
 	{
 	    @last=@others; # the first one
 	    $tag="first";
 	}
-
-
 	if (@last != @others) # skip over the first one
 	{
-
 #### EMIT THE LAST RUN
 ##TODO ----------
 	    finish_way ($wayid,\@run,$tag); # finish the run list
@@ -229,25 +202,19 @@ sub post_process_way_end
 #	    same as before, add to the run
 	    warn "duplicate in way:$wayid  node:$nd\n" if $debug;
 	}
-
 	###
 #	print "NODE $nd is connected to " . join (",",@others) . "\n";	
 	@last=@others;
     }
-
-
     #########################
     warn "Finish up run\n" if $debug;
     finish_way ($wayid,\@run, "last");
     
     warn "way done $wayid\n" if $debug;
-
 #####################################################################
     # emit the last element in the loop
-    ############################################################
-    
+    ############################################################    
 }
-
 
 sub way_in_node
 {
@@ -264,79 +231,72 @@ sub way_in_node
     return 0;
 }
 
-
 sub process_waynd
 {
     my $id=shift;
-    warn "process_waynd $id \n" if $debug;
+    warn "process_waynd $id in way $current_way\n" if $debug;
     if ($replace{$id})
     {
 	my $new=$replace{$id};
-	warn "adding replacing $id with $new\n" if $debug;
+	warn "adding replacing $id with $new in way $current_way\n" if $debug;
 	$id=$new;	
     }
-
     # dont add duplicates in array
     # look if the nodesways(what ways are in this node)
-
     if (!way_in_node($current_way,$id))
     {
 	# what whays is this node in
-	warn "adding $id to $current_way\n" if $debug;
+	warn "adding node:$id to way:$current_way\n" if $debug;
 	push @{$nodesways{$id}},$current_way; # store the way in the node
     }    
-
     my $count = $#{$ways{$current_way}->{nodes}};
-
-    if ($count < 1)
+    if ($count < 0)
     {
-	warn "Got count $count of nodes in $current_way" if $debug;
+	warn "Got count $count of nodes in $current_way\n" if $debug;
     }
-
     # done add duplicates to end of way
     if ($ways{$current_way}) # look up the current way
     {
-	my $lastinway=$last_node_seen;
+#	my $lastinway=$last_node_seen;
 	#my $lastinway=$ways{$current_way}->{nodes}[-1] || 0;
-
-	warn "last in way $lastinway" if $debug;
-
+	# the first is missing
+	my $lastitem = $ways{$current_way}->{nodes}[-1]; # the last item in the way
+	my $lastinway=$lastitem;
+	if ($lastitem)
+	{
+	    if ($lastinway)
+	    {
+		if ($lastitem != $lastinway)
+		{
+		    warn "in way $current_way inconsistent data $lastitem != $lastinway and count $count \n" if $debug;
+		}	
+	    }
+	    $lastinway =$lastitem;
+	}
+		
+	warn "last in way node :$lastinway in way:$current_way\n" if $debug;
 	if ($lastinway ne $id) # not the last in the way
 	{
 	    my $other=0;
-
-	    if (checkpair($lastinway, $id)) # remove all duplicate ways
+	  #  if (checkpair($lastinway, $id)) # remove all duplicate ways
 	    {
-		# the first is missing
-		if ($count <= 0) 
-		{
-		    if ($lastinway)
-		    {
-			warn "adding first $lastinway";
-			push (@{$ways{$current_way}->{nodes}},$lastinway);# store the first			
-
-		    }
-		}
-
-		warn "adding pair $lastinway, $id\n" if $debug;
-		my $lastitem = $ways{$current_way}->{nodes}[-1];
-		if ($lastitem)
-		{
-		    if ($lastinway)
-		    {
-			carp "inconsistent data $lastitem and count $count " unless $ways{$current_way}->{nodes}[-1]==$lastinway;
-		    }
-		}
+		warn "in way $current_way adding pair lastinway :$lastinway | lastitem:$lastitem, node:$id\n" if $debug;
 		
 		push (@{$ways{$current_way}->{nodes}},$id);# store the node     
 
-	    }# if check pair
-	    else
-	    {
-		warn "skipping this pair" if $debug;
-	    }
-=head2
 
+		# only store the last node seen if it is not a duplicate
+		$last_node_seen=$id;
+
+	    }# if check pair
+	    # else
+	    # {
+	    # 	# now we use this for checking duplicates.
+	    # 	#$last_node_seen=$id;
+
+	    # 	warn "skipping this pair" if $debug;
+	    # }
+=head2
 =cut
 	}
 	else
@@ -347,17 +307,14 @@ sub process_waynd
     else
     {
 	warn "if ways: $current_way" if $debug;
-
 	#start a new way
 	#push (@{$ways{$current_way}->{nodes}},$id);# store the node     
-
 #	warn "null :$current_way " . Dumper($ways{$current_way});
     }
-    $last_node_seen=$id;
+
 #    $debug=0;
 }
 
-#my %checksum;
 sub node
 {
     my $id=shift;
@@ -365,7 +322,6 @@ sub node
     my $lon=shift;
     my $slat=sprintf("%0.${tolerance}f",$lat);
     my $slon=sprintf("%0.${tolerance}f",$lon);
-
     if ($nodes{$slat}{$slon})
     {
 	my $old=$nodes{$slat}{$slon};	
@@ -376,12 +332,10 @@ sub node
     {
 	$nodes{$slat}{$slon}=$id;
 	$nodeids{$id}=[$lat,$lon]; # store the nodes values
-
 	return $id;
     }
 }
 
-my $QUOTE="[\\'\\\"]";
 sub consumeattrs
 {
     if (s/timestamp=${QUOTE}[\d\-T:Z]+${QUOTE}//)
@@ -395,7 +349,6 @@ sub consumeattrs
     }
     if (s/uid=${QUOTE}\d+${QUOTE}\s?//)
     {}
-
     if (s/user=${QUOTE}[\w\s]+${QUOTE}\s*//)
     {
     }
@@ -415,14 +368,11 @@ sub consumeattrs
 	#next; # skip this
 	return 0;
     }
-
     if (s/version=${QUOTE}\d+${QUOTE}\s*//)
     {
 	#remove version
     }
-
     return 1;
-
 #    warn "done $_";
 }
 
@@ -432,7 +382,6 @@ sub parse
     open IN, $file or die;
     my $coordpattern = "-?[\\d\\.\\-Ee]+";
     my $QUOTE="[\\'\\\"]";
-
     my $lat=0;
     my $lon=0;
     my $current_rel=0;
@@ -482,11 +431,8 @@ sub parse
 	    #end of node
 	}
 	elsif (/\s*<way/){
-
-
 #	consumeattrs;
 	    next unless consumeattrs;
-
 	    if (/\s*<way id=${QUOTE}(\-?\d+)${QUOTE}\s*>/)
 	    {
 		begin_way $1;	    
@@ -495,7 +441,6 @@ sub parse
 	    {
 		die "missing way $_";
 	    }
-
 	}
 	elsif(/<nd ref=${QUOTE}(-?\d+)${QUOTE}\s*\/>/)
 	{
@@ -520,7 +465,6 @@ sub parse
 	    {
 		die "Bad Relation $_";
 	    }
-
 	    # all on one line?
 	    while (s/<member type=${QUOTE}way${QUOTE} ref=${QUOTE}(-?\d+)${QUOTE} role=${QUOTE}outer${QUOTE}\s?\/>//){
 		
@@ -530,14 +474,12 @@ sub parse
 #		warn "member $_";
 		post_process_way($current_rel,$1); 
 	    }
-
 	}
 	
 	elsif (/<\/relation>/){
 	    $current_rel=0;
 	}
 	elsif (/<member type=${QUOTE}way${QUOTE} ref=${QUOTE}(-?\d+)${QUOTE} role=${QUOTE}outer${QUOTE}\s?\/>/){
-
 	    # now we want to post process this way
 	    # cut the way on all the intersections with all other relations
 	    # remove other ways that are duplicate, match it 100%
@@ -574,25 +516,25 @@ sub parse
     close IN;
 }
 
-my %rels; # the relationships
+
 
 sub post_process_ways
 {
     foreach my $wayid (sort keys %ways)
     {
 	my $rel =$ways{$wayid}->{relationship};
-	post_process_way_end $rel, $wayid;
+	post_process_way_end $rel, $wayid; # for each way, lets process it.
     }
 }
 
+
+##################### MAIN ROUTINE TO CLEAN
 
 foreach my $file (@ARGV)
 {
     parse $file;
 }
-
 post_process_ways;
-
 foreach my $wayid (sort keys %ways)
 {   
     my $rel =$ways{$wayid}->{relationship};
@@ -609,12 +551,9 @@ foreach my $wayid (sort keys %ways)
 }	
 #warn Dumper(\%waymapping); # dump out the ways 
 # now we can emit the relationships with the new ways instead of the old ones.
-
-my %seen; # what have we emitted
 #####################################################
 ### now output the doc 
 print "<osm version='0.6'>\n";
-
 foreach my $rel (keys %{rels})
 {
 #    warn "emit $rel\n";
@@ -633,13 +572,11 @@ foreach my $rel (keys %{rels})
 	{
 	    # add the new ways
 	    push @ways,$newway;
-
 	    if (!$seen{$newway}++) 
 	    {
 		warn "found new way $newway from old way $oldway" if $debug;
 #		if (!$fail)
 		{
-
 		    foreach my $nd (@{$ways{$newway}->{nodes}})
 		    {
 			# have we emitted the node yet?
@@ -662,10 +599,8 @@ foreach my $rel (keys %{rels})
 		    }
 		    print "<tag k='is_in:country' v='Colombia'/>\n";
 		    print "<tag k='_ID' v='$newway' />\n";
-
 		    print "</way>\n";
 		}
-
 	    }
 	    else
 	    {
@@ -673,10 +608,7 @@ foreach my $rel (keys %{rels})
 	    }
 	}## after all new ways
 	
-
     }# after old ways
-
-
     # relationships
     if (!$seen{$rel}++) 
     {
@@ -693,12 +625,10 @@ foreach my $rel (keys %{rels})
 	    my $v=$tags{$rel}{$k};
 	    print "<tag k='$k' v='$v' />\n";
 	}
-
 	print "<tag k='_ID' v='$rel' />\n";
 	print "</relation>\n";
     }
     # now emit the relationship
     #warn Dumper($tags{$rel});
-
 }# end of relationship
 print "</osm>\n";
