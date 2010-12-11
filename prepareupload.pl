@@ -32,6 +32,164 @@ my %seenfilter;
 my $QUOTE="[\\'\\\"]";
 my %seen; # what have we emitted
 
+=head2
+new algorithm for removing duplicate way.
+
+1. each segment is stored attached to the node. 
+node has a list of in and out arcs each contain the from and two nodes
+each arc contains the way(s) and relations(s) it belongs to.
+if we find a duplicate segment, we can replace it immediatly.
+=cut
+
+
+my %node_arcs;
+# {NODE ID} -> {in_arcs} = list
+# {NODE ID} -> {out_arcs} = list
+
+sub undup
+{
+    my $id=shift;
+    if ($replace{$id})
+    {
+	my $new=$replace{$id};
+	warn "adding replacing $id with $new in way $current_way\n" if $debug;
+	$id=$new;	
+    }
+    return $id;
+
+}
+
+my %ways_to_split;
+
+sub add_arc_to_node
+{
+    my $from_nodeid=undup(shift);
+    my $to_nodeid=undup(shift);
+    my $in_way=shift;
+    my $arc = [$from_nodeid,$to_nodeid,$in_way,0]; # the opposite way is null
+    
+    foreach my $n ($from_nodeid,$to_nodeid)
+    {
+	if ($node_arcs{$n})
+	{
+	    foreach my $i (@{$node_arcs{$n}})
+	    {
+		if ($from_nodeid == $i->[0]) # from node
+		{
+		    if ($to_nodeid == $i->[1]) # to node
+		    {
+			# match
+#		    warn "duplicate" if $debug;
+			warn "duplicate tuplie $from_nodeid -> $to_nodeid : in way" . $in_way . "\n" ;
+
+		    }
+		}
+		if ($from_nodeid == $i->[1]) # from node
+		{
+		    if ($to_nodeid == $i->[0]) # to node
+		    {
+			# match in the other direction
+			$i->[3]=$in_way; # store the opposite direction
+#			warn "found opposite way $to_nodeid -> $from_nodeid : new way" . $in_way . " old way : ". $i->[2];
+			$ways_to_split{$i->[2]}=$i->[3];
+			return;
+		    }
+		}
+	    }       
+	}
+	#add a node
+    }
+    push @{$node_arcs{$from_nodeid}},$arc;
+
+}
+
+
+sub make_new_way
+{
+    my $wayid =shift; # old way
+    my @newlist =@_;  # all the new points to add 
+    if (@newlist)
+    {
+	$newids--; # allocate a new id for the way
+	push @{$ways{$newids}->{nodes}},@newlist;
+	push @{$waymapping{$wayid}},$newids; # map the old id onto the new
+	warn "new way $newids contains" . join (",",@{$ways{$newids}->{nodes}}) . "\n";
+    }
+    else
+    {
+	warn "Empty list $wayid called";
+    }
+
+}
+
+sub remove_duplicate_ways
+{
+    # after we have looked at all the ways, we can remove the duplicates
+#    warn Dumper(\%ways_to_split);
+    # the new side is on the left, the old side on the right.
+    # we want to remove all the right side from the relations, add the left side to them
+    # we do that by creating new ways from them, all the new ways will be references from the old for the purposes of making the relations
+    # but first we need to split the side into the smallest common denominators
+    # we look at a way, look at all the parts to it, see if the duplicate flag is set, and then split the way there.
+    foreach my $wayid (sort keys %ways)
+    {
+	warn "looking at $wayid for splitting \n";	
+
+	my $rel =$ways{$wayid}->{relationship};
+	my @newpoints=();
+	#
+
+	if ($ways{$wayid})
+	{
+	    my @oldnodes= @{$ways{$wayid}->{nodes}};
+	    warn "oldway $wayid contains" . join (",",@oldnodes) . "\n";	
+	    
+	    foreach my $nd (@oldnodes)
+	    {
+		push @newpoints,$nd;
+		my $otherway=0;
+			       
+		warn "$nd has arcs ". Dumper(@{$node_arcs{$nd}}) . "\n";
+		foreach my $arc (@{$node_arcs{$nd}})
+		{		
+		    if ($arc->[2] == $wayid)
+		    {
+			if ($arc->[3]) # should be split
+			{
+			    # is the way different?
+			    
+			    if ($otherway==0) #for the first node, we just add that.
+			    {
+				$otherway=$arc->[3];
+			    }
+			    if ($arc->[3] != $otherway) # second round
+			    {
+				#we split here
+				warn "going to make new way $wayid contains" . join (",",@newpoints) . "\n";	
+				
+				make_new_way($wayid,@newpoints);
+				@newpoints=();
+				$otherway=$arc->[3];			    
+			    }
+			} # is there another wayy, a reverse way
+		    }# only look at the arcs from this way in the node
+		}# for all arcs
+	    }
+	}
+	warn "leftovers for new $wayid contains" . join (",",@newpoints) . "\n";	
+
+	if (@newpoints)
+	{
+	    make_new_way($wayid,@newpoints);	
+	}
+
+    }    
+    # then we add those parts to the new relations.
+
+    # add the points to a new list 
+
+}
+
 sub begin_way
 {
     my $id=shift;
@@ -97,8 +255,14 @@ sub checkpair
     that all have the same set of attributes, they dont need any more cutting.    
     returns the newid, so we can append the trailing bits
 =cut
+
 sub finish_way
 {
+
+}
+sub finish_way_old
+{
+
     my $wayid=shift;
     my $runlist=shift;
     my $tag =shift;
@@ -133,6 +297,10 @@ sub finish_way
 
 # post process the way
 sub post_process_way_end
+{
+}
+
+sub post_process_way_end_old
 {
     my $rel  =shift;
     my $wayid=shift;
@@ -261,54 +429,44 @@ sub process_waynd
 	#my $lastinway=$ways{$current_way}->{nodes}[-1] || 0;
 	# the first is missing
 	my $lastitem = $ways{$current_way}->{nodes}[-1]; # the last item in the way
-	my $lastinway=$lastitem;
-	if ($lastitem)
+	
+	if(!$lastitem)
 	{
-	    if ($lastinway)
-	    {
-		if ($lastitem != $lastinway)
-		{
-		    warn "in way $current_way inconsistent data $lastitem != $lastinway and count $count \n" if $debug;
-		}	
-	    }
-	    $lastinway =$lastitem;
-	}
-		
-	warn "last in way node :$lastinway in way:$current_way\n" if $debug;
-	if ($lastinway ne $id) # not the last in the way
-	{
-	    my $other=0;
-	  #  if (checkpair($lastinway, $id)) # remove all duplicate ways
-	    {
-		warn "in way $current_way adding pair lastinway :$lastinway | lastitem:$lastitem, node:$id\n" if $debug;
-		
-		push (@{$ways{$current_way}->{nodes}},$id);# store the node     
-
-
-		# only store the last node seen if it is not a duplicate
-		$last_node_seen=$id;
-
-	    }# if check pair
-	    # else
-	    # {
-	    # 	# now we use this for checking duplicates.
-	    # 	#$last_node_seen=$id;
-
-	    # 	warn "skipping this pair" if $debug;
-	    # }
-=head2
-=cut
+	    warn "lastitem is null for $current_way" if $debug;
+#	    warn Dumper($ways{$current_way});
+	    push (@{$ways{$current_way}->{nodes}},$id);# store the node     
 	}
 	else
 	{
-	    warn "$lastinway eq $id, skipping" if $debug;
-	}
+	    warn "last in way node :$lastitem in way:$current_way\n" if $debug;
+	    if ($lastitem ne $id) # not the last in the way
+	    {
+		my $other=0;
+		
+	    
+		# build up the new structure
+		add_arc_to_node($lastitem, $id, $current_way);
+		
+		#  if (checkpair($lastinway, $id)) # remove all duplicate ways
+		{
+#		    warn "in way $current_way adding pair lastinway :$lastinway | lastitem:$lastitem, node:$id\n" if $debug;
+		    
+		    push (@{$ways{$current_way}->{nodes}},$id);# store the node     
+		    
+		    
+		    # only store the last node seen if it is not a duplicate
+		    $last_node_seen=$id;
+		    
+		}# if check pair
+
+	    }
+	} # 
     }
     else
     {
-	warn "if ways: $current_way" if $debug;
+	warn "start new way: $current_way" if $debug;
 	#start a new way
-	#push (@{$ways{$current_way}->{nodes}},$id);# store the node     
+	push (@{$ways{$current_way}->{nodes}},$id);# store the node     
 #	warn "null :$current_way " . Dumper($ways{$current_way});
     }
 
@@ -516,14 +674,20 @@ sub parse
     close IN;
 }
 
+=head2
+    duplicate way algorithm
 
+    1. each node has a pointer to a set of arc, the next node.
+    2. if the next node points back to this node, it is duplicate, we remove it.
+=cut
 
 sub post_process_ways
 {
     foreach my $wayid (sort keys %ways)
     {
 	my $rel =$ways{$wayid}->{relationship};
-	post_process_way_end $rel, $wayid; # for each way, lets process it.
+	#post_process_way_end $rel, $wayid; # for each way, lets process it.
+	push @{$waymapping{$wayid}},$wayid; # map onto self for now
     }
 }
 
@@ -534,7 +698,8 @@ foreach my $file (@ARGV)
 {
     parse $file;
 }
-post_process_ways;
+#post_process_ways;
+remove_duplicate_ways;
 foreach my $wayid (sort keys %ways)
 {   
     my $rel =$ways{$wayid}->{relationship};
