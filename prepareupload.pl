@@ -112,7 +112,10 @@ sub add_arc_to_node
 sub make_new_way
 {
     my $wayid =shift||die "no way id "; # old way
-    my @newlist =@_;  # all the new points to add 
+
+    my %seennd;
+    my @newlist;
+    map {if (!$seennd{$_}++){push (@newlist,$_);} } @_;  # all the new points to add 
     if (@newlist)
     {
 	if ($#newlist == 0)
@@ -188,8 +191,13 @@ sub remove_duplicate_ways
 		    {
 		      $lastway=$_->[2]; 
 		    }
-		  $_->[2] ."|". $_->[3];
-		    
+		  # transform the ways to relationships, 
+		  die "no data" unless $_->[2];
+		  my $rel1=$ways{$_->[2]}->{relationship} ;
+		  my $rel2=$ways{$_->[3]}->{relationship} || $rel1 ;
+		      
+		  $rel1 .   "|"    . $rel2;
+		  
 		} (@{$node_arcs{$nd}}));
 		warn "node $nd has arcs $str\n";
 		if ($otherway eq "")
