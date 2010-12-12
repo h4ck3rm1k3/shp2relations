@@ -109,10 +109,17 @@ sub make_new_way
     my @newlist =@_;  # all the new points to add 
     if (@newlist)
     {
-	$newids--; # allocate a new id for the way
-	push @{$ways{$newids}->{nodes}},@newlist;
-	push @{$waymapping{$wayid}},$newids; # map the old id onto the new
-	warn "new way $newids contains" . join (",",@{$ways{$newids}->{nodes}}) . "\n";
+	if ($#newlist == 0)
+	{
+	    warn "cannot have only one node in way";
+	}
+	else
+	{
+	    $newids--; # allocate a new id for the way
+	    push @{$ways{$newids}->{nodes}},@newlist;
+	    push @{$waymapping{$wayid}},$newids; # map the old id onto the new
+	    warn "new way $newids contains" . join (",",@{$ways{$newids}->{nodes}}) . "\n";
+	}
     }
     else
     {
@@ -138,41 +145,33 @@ sub remove_duplicate_ways
 	my $rel =$ways{$wayid}->{relationship};
 	my @newpoints=();
 
+	my $lastnode=0;
+
 	if ($ways{$wayid})
 	{
 	    my @oldnodes= @{$ways{$wayid}->{nodes}};
 	    warn "oldway $wayid contains" . join (",",@oldnodes) . "\n";	
 
-	    my $otherway=0;	    
+	    my $otherway="";	    
 	    foreach my $nd (@oldnodes)
 	    {
 		push @newpoints,$nd;
 			       
-#		warn "$nd has arcs ". Dumper(@{$node_arcs{$nd}}) . "\n";
-		foreach my $arc (@{$node_arcs{$nd}})
-		{		
-		    if ($arc->[2] == $wayid)
-		    {
-			if ($arc->[3]) # should be split
-			{
-			    # is the way different?
-			    
-			    if ($otherway==0) #for the first node, we just add that.
-			    {
-				$otherway=$arc->[3];
-			    }
-			    if ($arc->[3] != $otherway) # second round
-			    {
-				#we split here
-				warn "going to make new way $wayid contains" . join (",",@newpoints) . "\n";	
-				
-				make_new_way($wayid,@newpoints);
-				@newpoints=();
-				$otherway=$arc->[3];			    
-			    }
-			} # is there another wayy, a reverse way
-		    }# only look at the arcs from this way in the node
-		}# for all arcs
+		# split on each unique combination of the arcs.. we want fine cuttting
+		my $str= join (",",map { $_->[2] ."|". $_->[3]} (@{$node_arcs{$nd}}));
+		warn "node $nd has arcs $str";
+		if ($otherway eq "")
+		{
+		    $otherway=$str;
+		}
+		if ($str ne $otherway)
+		{
+		    warn " $str ne $otherway, going to make new way $wayid contains" . join (",",@newpoints) . "\n";	
+		    make_new_way($wayid,@newpoints);
+		    @newpoints=($nd); # add the last node to the first 
+		    $otherway=$str;
+		}
+		$lastnode=$nd; # save the last node
 	    }# each node in old nodes
 	} # if ways
 	warn "leftovers for new $wayid contains" . join (",",@newpoints) . "\n";	
@@ -182,7 +181,7 @@ sub remove_duplicate_ways
 	    make_new_way($wayid,@newpoints);	
 	}
 
-    }    
+    } # each way
     # then we add those parts to the new relations.
 
     # add the points to a new list 
@@ -302,7 +301,7 @@ sub process_waynd
 	}
 	else
 	{
-	    warn "last in way node :$lastitem in way:$current_way\n" if $debug;
+#	    warn "last in way node :$lastitem in way:$current_way\n" if $debug;
 	    if ($lastitem ne $id) # not the last in the way
 	    {
 		my $other=0;
@@ -564,6 +563,7 @@ foreach my $file (@ARGV)
 }
 #post_process_ways;
 remove_duplicate_ways;
+
 foreach my $wayid (sort keys %ways)
 {   
     my $rel =$ways{$wayid}->{relationship};
