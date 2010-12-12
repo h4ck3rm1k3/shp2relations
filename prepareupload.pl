@@ -121,48 +121,6 @@ sub make_new_way
 
 }
 
-sub process_opposite_nodes
-{
-    my $wayid=shift;
-    my $otherway=shift;
-    # emit only the ways where this node is not mentioned in the replace part of the node
-    # loop over, if the way is listed in the replace section, dont emit this way, but add the other way, 
-    # better said its replacement to the relation. how to get the replacement way for this one node.
-    my $rel =$ways{$wayid}->{relationship};
-    my @newpoints=();   
-    if ($ways{$wayid})
-    {
-	my @oldnodes= @{$ways{$wayid}->{nodes}};
-	warn "oppositway $wayid contains" . join (",",@oldnodes) . "\n";	
-	
-	foreach my $nd (@oldnodes)
-	{
-	    my $otherway=0;
-	    foreach my $arc (@{$node_arcs{$nd}})
-	    {		
-		if ($arc->[3] == $wayid) # this is in the second one? 
-		{
-		    #we split here
-		    warn "going to make new way $wayid contains" . join (",",@newpoints) . "\n";	
-		    
-		    if (@newpoints)
-		    {
-			make_new_way($wayid,@newpoints);
-			@newpoints=();
-		    }
-		} # cutting point
-		else
-		{
-		    push @newpoints,$nd;    
-		}
-	    } # each arc
-	} # each node 
-
-	# leftovers
-	make_new_way($wayid,@newpoints);
-    }
-
-}
 
 sub remove_duplicate_ways
 {
@@ -179,29 +137,18 @@ sub remove_duplicate_ways
 
 	my $rel =$ways{$wayid}->{relationship};
 	my @newpoints=();
-	#
-	if ($ways_to_split{$wayid})
-	{
-	    #
-	    process_opposite_nodes($wayid); # problem 
-	    next;
-	    #next; # lets skip over, no this does not work, because parts of this way still need to be created we need to split it as well. 
-	    # this way will be replaced by others
-	    #push @{$waymapping{$wayid}},$newids; # map the old id onto the new
-
-	}
 
 	if ($ways{$wayid})
 	{
 	    my @oldnodes= @{$ways{$wayid}->{nodes}};
 	    warn "oldway $wayid contains" . join (",",@oldnodes) . "\n";	
-	    
+
+	    my $otherway=0;	    
 	    foreach my $nd (@oldnodes)
 	    {
 		push @newpoints,$nd;
-		my $otherway=0;
 			       
-		warn "$nd has arcs ". Dumper(@{$node_arcs{$nd}}) . "\n";
+#		warn "$nd has arcs ". Dumper(@{$node_arcs{$nd}}) . "\n";
 		foreach my $arc (@{$node_arcs{$nd}})
 		{		
 		    if ($arc->[2] == $wayid)
