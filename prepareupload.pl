@@ -4,10 +4,13 @@ use Data::Dumper;
 use Carp;
 
 =head1
+
     1. empty ways
     2. double points in way
     3. 
+
 =cut
+
 
 my $tolerance=20;
 my %nodes;
@@ -18,7 +21,7 @@ my %tags; # store the tags
 
 my $newids = -3000000; # we give new objects ids starting here
 my $current_way;
-my $debug=1;
+my $debug=0;
 my %ways;
 my %waystring;
 # just store the last node seen an used that.
@@ -33,15 +36,18 @@ my $QUOTE="[\\'\\\"]";
 my %seen; # what have we emitted
 
 =head2
+
 new algorithm for removing duplicate way.
 
 1. each segment is stored attached to the node. 
 node has a list of in and out arcs each contain the from and two nodes
 each arc contains the way(s) and relations(s) it belongs to.
 if we find a duplicate segment, we can replace it immediatly.
+
 =cut
 
 
+my %ways_to_split;
 my %node_arcs;
 # {NODE ID} -> {in_arcs} = list
 # {NODE ID} -> {out_arcs} = list
@@ -58,7 +64,7 @@ sub undup
     return $id;
 }
 
-my %ways_to_split;
+
 
 sub add_arc_to_node
 {
@@ -79,7 +85,7 @@ sub add_arc_to_node
 		    {
 			# match
 #		    warn "duplicate" if $debug;
-			warn "duplicate tuplie $from_nodeid -> $to_nodeid : in way" . $in_way . "\n" ;
+			warn "duplicate tuplie $from_nodeid -> $to_nodeid : in way" . $in_way . "\n" if $debug;
 
 		    }
 		}
@@ -105,25 +111,25 @@ sub add_arc_to_node
 
 sub make_new_way
 {
-    my $wayid =shift; # old way
+    my $wayid =shift||die "no way id "; # old way
     my @newlist =@_;  # all the new points to add 
     if (@newlist)
     {
 	if ($#newlist == 0)
 	{
-	    warn "cannot have only one node in way";
+	    warn "cannot have only one node in way" if $debug;
 	}
 	else
 	{
 	    $newids--; # allocate a new id for the way
 	    push @{$ways{$newids}->{nodes}},@newlist;
 	    push @{$waymapping{$wayid}},$newids; # map the old id onto the new
-	    warn "new way $newids contains" . join (",",@{$ways{$newids}->{nodes}}) . "\n";
+	    warn "new way $newids contains" . join (",",@{$ways{$newids}->{nodes}}) . "\n" if $debug;
 	}
     }
     else
     {
-	warn "Empty list $wayid called";
+	warn "Empty list $wayid called" if $debug;
     }
 
 }
@@ -131,6 +137,7 @@ sub make_new_way
 
 sub remove_duplicate_ways
 {
+    warn "remove_duplicate_ways\n";
     # after we have looked at all the ways, we can remove the duplicates
 
     # the new side is on the left, the old side on the right.
@@ -138,50 +145,90 @@ sub remove_duplicate_ways
     # we do that by creating new ways from them, all the new ways will be references from the old for the purposes of making the relations
     # but first we need to split the side into the smallest common denominators
     # we look at a way, look at all the parts to it, see if the duplicate flag is set, and then split the way there.
-    foreach my $wayid (sort keys %ways)
+    foreach my $rel (keys %rels)
     {
-	warn "looking at $wayid for splitting \n";	
-
-	my $rel =$ways{$wayid}->{relationship};
-	my @newpoints=();
-
-	my $lastnode=0;
-
-	if ($ways{$wayid})
+	my @relnodes; # an array of all nodes in the relationship
+	my $lastway=0;
+	foreach my $wayid ( @{$rels{$rel}})
 	{
-	    my @oldnodes= @{$ways{$wayid}->{nodes}};
-	    warn "oldway $wayid contains" . join (",",@oldnodes) . "\n";	
+	    warn "looking at $wayid \n";	
+	    #foreach my $wayid (sort keys %ways)
+	    ##   {
+
+	    # }	  
+	    push @relnodes,@{$ways{$wayid}->{nodes}};
+	    $lastway=$wayid;
+	}
+
+	warn "relation $rel has ". join (",",@relnodes). "\n";
+	warn "last way is $lastway\n";
+
+#	my $rel =$ways{$wayid}->{relationship};
+	my @newpoints=();
+	my $count =0;
+	my $lastnode=0;
+	
+	# the first set of nodes must be not processed until the end
+	# we will combine then with the end nodes.
+
+#	if ($ways{$wayid})
+	{
+#	    my @oldnodes= @{$ways{$wayid}->{nodes}};
+#	    warn "oldway $wayid contains" . join (",",@oldnodes) . "\n";	
 
 	    my $otherway="";	    
-	    foreach my $nd (@oldnodes)
+	    while (@relnodes)
 	    {
+		my $nd = shift @relnodes; # take one off the start
 		push @newpoints,$nd;
 			       
 		# split on each unique combination of the arcs.. we want fine cuttting
-		my $str= join (",",map { $_->[2] ."|". $_->[3]} (@{$node_arcs{$nd}}));
-		warn "node $nd has arcs $str";
+		my $str= join (",",map {
+		  if ($_->[2])
+		    {
+		      $lastway=$_->[2]; 
+		    }
+		  $_->[2] ."|". $_->[3];
+		    
+		} (@{$node_arcs{$nd}}));
+		warn "node $nd has arcs $str\n";
 		if ($otherway eq "")
 		{
 		    $otherway=$str;
 		}
 		if ($str ne $otherway)
 		{
-		    warn " $str ne $otherway, going to make new way $wayid contains" . join (",",@newpoints) . "\n";	
-		    make_new_way($wayid,@newpoints);
-		    @newpoints=($nd); # add the last node to the first 
-		    $otherway=$str;
+		    if ($count > 0)
+		    {
+			warn " $str ne $otherway, going to make new way $rel contains" . join (",",@newpoints) . "\n";	
+			make_new_way(
+				     $lastway,
+				     @newpoints
+				    );
+			@newpoints=($nd); # add the last node to the first 
+			$otherway=$str;
+		    }
+		    else
+		    {
+			# add the points to the end
+			push @relnodes,@newpoints;
+			@newpoints=($nd);# start 
+		    }
+		    $count++;
 		}
 		$lastnode=$nd; # save the last node
 	    }# each node in old nodes
 	} # if ways
-	warn "leftovers for new $wayid contains" . join (",",@newpoints) . "\n";	
+	warn "leftovers for rel:$rel lastway:$lastway   contains " . join (",",@newpoints) . "\n";	
 
-	if (@newpoints)
+	if ($#newpoints >0)
 	{
-	    make_new_way($wayid,@newpoints);	
+	    # these leftovers should be tried to be combined with the rest of the nodes
+	    # have a situation where these nodes should be joined with the rest of the nodes.
+	    make_new_way($lastway,@newpoints);	
 	}
-
-    } # each way
+    
+    } # each rel
     # then we add those parts to the new relations.
 
     # add the points to a new list 
@@ -537,127 +584,132 @@ sub parse
     close IN;
 }
 
+
 =head2
+
     duplicate way algorithm
 
     1. each node has a pointer to a set of arc, the next node.
     2. if the next node points back to this node, it is duplicate, we remove it.
+
 =cut
 
-sub post_process_ways
+sub transfer_ways
 {
     foreach my $wayid (sort keys %ways)
-    {
+    {   
 	my $rel =$ways{$wayid}->{relationship};
-	#post_process_way_end $rel, $wayid; # for each way, lets process it.
-	push @{$waymapping{$wayid}},$wayid; # map onto self for now
-    }
-}
-
-
-##################### MAIN ROUTINE TO CLEAN
-
-foreach my $file (@ARGV)
-{
-    parse $file;
-}
-#post_process_ways;
-remove_duplicate_ways;
-
-foreach my $wayid (sort keys %ways)
-{   
-    my $rel =$ways{$wayid}->{relationship};
-    if ($rel)
-    {
-	# these relationships contains these ways
-	push @{$rels{$rel}},$wayid;###
-    }
-    else
-    {
+	if ($rel)
+	{
+	    # these relationships contains these ways
+	    push @{$rels{$rel}},$wayid;###
+	}
+	else
+	{
 #	warn "no rel found, must be new";
 #	warn Dumper($ways{$wayid});
-    }
-}	
-#warn Dumper(\%waymapping); # dump out the ways 
-# now we can emit the relationships with the new ways instead of the old ones.
-#####################################################
-### now output the doc 
-print "<osm version='0.6'>\n";
-foreach my $rel (keys %{rels})
-{
-#    warn "emit $rel\n";
-#    warn Dumper($tags{$rel});
-    #   warn Dumper($rels{$rel});
-    my @ways;
-    foreach my $oldway ( @{$rels{$rel}})
-    {
+	}
+    }	
+}
+
+sub emit_osm
+  {
+    my $ofile=shift;
+    open OUT,">$ofile";
+
+    #warn Dumper(\%waymapping); # dump out the ways 
+    # now we can emit the relationships with the new ways instead of the old ones.
+    #####################################################
+    ### now output the doc 
+    print OUT  "<osm version='0.6'>\n";
+    foreach my $rel (keys %{rels}) {
+      #    warn "emit $rel\n";
+      #    warn Dumper($tags{$rel});
+      #   warn Dumper($rels{$rel});
+      my @ways;
+      foreach my $oldway ( @{$rels{$rel}}) {
 	warn "found old way $oldway" if $debug;
+
 =head2
-    here we map all old ways onto new ways.
-    the old ways are not used, only the new ones, recreated from the old
-    the waymapping hash manages that
+	    here we map all old ways onto new ways.
+	    the old ways are not used, only the new ones, recreated from the old
+	    the waymapping hash manages that
+
 =cut
-	foreach my $newway (@{$waymapping{$oldway}}	)
-	{
-	    # add the new ways
-	    push @ways,$newway;
-	    if (!$seen{$newway}++) 
+
+	foreach my $newway (@{$waymapping{$oldway}}	) {
+	  # add the new ways
+	  push @ways,$newway;
+	  if (!$seen{$newway}++) {
+	    warn "found new way $newway from old way $oldway" if $debug;
+	    #		if (!$fail)
 	    {
-		warn "found new way $newway from old way $oldway" if $debug;
-#		if (!$fail)
-		{
-		    foreach my $nd (@{$ways{$newway}->{nodes}})
-		    {
-			# have we emitted the node yet?
-			warn "$nd in $newway\n" if $debug;
+	      foreach my $nd (@{$ways{$newway}->{nodes}}) {
+		# have we emitted the node yet?
+		warn "$nd in $newway\n" if $debug;
 			
-			if (!$seen{$nd}++) 
-			{		    
-			    my ($lat,$lon)=@{$nodeids{$nd}};
-			    print "<node id=\'$nd\' lat='$lat' lon='$lon'>\n";
-			    print "<tag k='_ID' v='$nd' />\n";
-			    print "</node>\n";
-			}
-			
-		    }
-		    # emit new way------------------------ 
-		    print "<way id='$newway'>\n";
-		    foreach my $nd (@{$ways{$newway}->{nodes}})
-		    {
-			print "<nd ref='$nd'/>\t";
-		    }
-		    print "<tag k='is_in:country' v='Colombia'/>\n";
-		    print "<tag k='_ID' v='$newway' />\n";
-		    print "</way>\n";
+		if (!$seen{$nd}++) {		    
+		  my ($lat,$lon)=@{$nodeids{$nd}};
+		  print OUT "<node id=\'$nd\' lat='$lat' lon='$lon'>\n".
+		    "<tag k='_ID' v='$nd' />\n".
+		      "</node>\n";
 		}
+			
+	      }
+	      # emit new way------------------------ 
+	      print OUT "<way id='$newway'>\n";
+	      foreach my $nd (@{$ways{$newway}->{nodes}}) {
+		print OUT "<nd ref='$nd'/>\t";
+	      }
+	      print OUT "<tag k='is_in:country' v='Colombia'/>\n".
+		"<tag k='_ID' v='$newway' />\n" .
+		  "</way>\n";
 	    }
-	    else
-	    {
-		#reusing the way
-	    }
-	}## after all new ways
+	  } else {
+	    #reusing the way
+	  }
+	}			## after all new ways
 	
-    }# after old ways
-    # relationships
-    if (!$seen{$rel}++) 
-    {
+      }				# after old ways
+      # relationships
+      if (!$seen{$rel}++) {
 	## emit the ways 
-	print "<relation id='$rel'>\n";
-	foreach my $w (@ways)
-	{
-	    # emit the ways
-	    print "<member type='way' ref='$w' role='outer'/>\n";
+	print OUT "<relation id='$rel'>\n";
+	foreach my $w (@ways) {
+	  # emit the ways
+	  print OUT "<member type='way' ref='$w' role='outer'/>\n";
 	}	
 	# keys
-	foreach my $k (sort keys %{$tags{$rel}})
-	{
-	    my $v=$tags{$rel}{$k};
-	    print "<tag k='$k' v='$v' />\n";
+	foreach my $k (sort keys %{$tags{$rel}}) {
+	  my $v=$tags{$rel}{$k};
+	  print OUT "<tag k='$k' v='$v' />\n";
 	}
-	print "<tag k='_ID' v='$rel' />\n";
-	print "</relation>\n";
-    }
-    # now emit the relationship
-    #warn Dumper($tags{$rel});
-}# end of relationship
-print "</osm>\n";
+	print OUT "<tag k='_ID' v='$rel' />\n";
+	print OUT "</relation>\n";
+      }
+      # now emit the relationship
+      #warn Dumper($tags{$rel});
+    } # end of relationship
+    print OUT "</osm>\n";
+    close OUT;
+  }
+
+##################### MAIN ROUTINE TO CLEAN
+  
+  sub main
+    {
+      my $outfile=shift @_;
+      
+      foreach my $file (@_)
+	{
+	  parse $file;
+	}
+
+      
+      transfer_ways;
+      remove_duplicate_ways;
+      emit_osm $outfile;
+      
+    };
+    
+    main @ARGV;
