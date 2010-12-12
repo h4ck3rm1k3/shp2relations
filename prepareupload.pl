@@ -56,7 +56,6 @@ sub undup
 	$id=$new;	
     }
     return $id;
-
 }
 
 my %ways_to_split;
@@ -91,7 +90,7 @@ sub add_arc_to_node
 			# match in the other direction
 			$i->[3]=$in_way; # store the opposite direction
 #			warn "found opposite way $to_nodeid -> $from_nodeid : new way" . $in_way . " old way : ". $i->[2];
-			$ways_to_split{$i->[2]}=$i->[3];
+			$ways_to_split{$i->[3]}=$i->[2];
 			return;
 		    }
 		}
@@ -122,10 +121,53 @@ sub make_new_way
 
 }
 
+sub process_opposite_nodes
+{
+    my $wayid=shift;
+    my $otherway=shift;
+    # emit only the ways where this node is not mentioned in the replace part of the node
+    # loop over, if the way is listed in the replace section, dont emit this way, but add the other way, 
+    # better said its replacement to the relation. how to get the replacement way for this one node.
+    my $rel =$ways{$wayid}->{relationship};
+    my @newpoints=();   
+    if ($ways{$wayid})
+    {
+	my @oldnodes= @{$ways{$wayid}->{nodes}};
+	warn "oppositway $wayid contains" . join (",",@oldnodes) . "\n";	
+	
+	foreach my $nd (@oldnodes)
+	{
+	    my $otherway=0;
+	    foreach my $arc (@{$node_arcs{$nd}})
+	    {		
+		if ($arc->[3] == $wayid) # this is in the second one? 
+		{
+		    #we split here
+		    warn "going to make new way $wayid contains" . join (",",@newpoints) . "\n";	
+		    
+		    if (@newpoints)
+		    {
+			make_new_way($wayid,@newpoints);
+			@newpoints=();
+		    }
+		} # cutting point
+		else
+		{
+		    push @newpoints,$nd;    
+		}
+	    } # each arc
+	} # each node 
+
+	# leftovers
+	make_new_way($wayid,@newpoints);
+    }
+
+}
+
 sub remove_duplicate_ways
 {
     # after we have looked at all the ways, we can remove the duplicates
-#    warn Dumper(\%ways_to_split);
+
     # the new side is on the left, the old side on the right.
     # we want to remove all the right side from the relations, add the left side to them
     # we do that by creating new ways from them, all the new ways will be references from the old for the purposes of making the relations
@@ -138,6 +180,16 @@ sub remove_duplicate_ways
 	my $rel =$ways{$wayid}->{relationship};
 	my @newpoints=();
 	#
+	if ($ways_to_split{$wayid})
+	{
+	    #
+	    process_opposite_nodes($wayid); # problem 
+	    next;
+	    #next; # lets skip over, no this does not work, because parts of this way still need to be created we need to split it as well. 
+	    # this way will be replaced by others
+	    #push @{$waymapping{$wayid}},$newids; # map the old id onto the new
+
+	}
 
 	if ($ways{$wayid})
 	{
@@ -174,8 +226,8 @@ sub remove_duplicate_ways
 			} # is there another wayy, a reverse way
 		    }# only look at the arcs from this way in the node
 		}# for all arcs
-	    }
-	}
+	    }# each node in old nodes
+	} # if ways
 	warn "leftovers for new $wayid contains" . join (",",@newpoints) . "\n";	
 
 	if (@newpoints)
@@ -247,141 +299,6 @@ sub checkpair
 	return 0;
     }
     return 1;
-}
-
-=head2
-    finish_way (way_id, [@runlist])
-    this is called when we have a finished set of nodes in a run (contigious) along a way
-    that all have the same set of attributes, they dont need any more cutting.    
-    returns the newid, so we can append the trailing bits
-=cut
-
-sub finish_way
-{
-
-}
-sub finish_way_old
-{
-
-    my $wayid=shift;
-    my $runlist=shift;
-    my $tag =shift;
-    #remove duplicates from the ways 
-    my @newlist = @{$runlist};
-    $last_node_seen=0; #reset
-    my $runstring= join (",",sort {$a <=> $b} @newlist);
-    warn "Run for $wayid with tag $tag contains " . join (",",@newlist) . "\n" if $debug;
-    # run string
-    if ( $#newlist == 0)
-    {
-#	warn "only 1 object";
-	return;
-    }
-    if ($waystring{$runstring})
-    {
-	# we have done this one.
-	warn "Duplicate (" . $runstring . ")\n" if $debug;
-	push @{$waymapping{$wayid}},$waystring{$runstring}; # push the id as a replacement for the old string
-    }
-    else
-    {
-	$newids--; # allocate a new id.
-	push @{$waymapping{$wayid}},$newids; # map the old id onto the new
-	$waystring{$runstring}=$newids; # give this new way an id
-	warn "Run in way $wayid Finished (" . $runstring . ")\n" if $debug;
-	# now put the nodes on the new way....
-	push @{$ways{$newids}->{nodes}},@newlist;
-    }
-    return $newids;
-}
-
-# post process the way
-sub post_process_way_end
-{
-}
-
-sub post_process_way_end_old
-{
-    my $rel  =shift;
-    my $wayid=shift;
-    warn "looking at way $wayid\n" if $debug;
-    my @last;
-    my @run; # a run of nodes in the same context
-    my $tag="";
-    my $segment=0;
-    my $lastnode=0;
-    foreach my $nd (@{$ways{$wayid}->{nodes}})
-    {
-	my @others = ();
-	if (!$nd)
-	{
-	    warn "no node";
-	}
-	else
-	{
-	    @others = @{$nodesways{$nd}}; # get a list of ways connecting to the node
-	    push @run,$nd;
-	}
-	if (!@last) # we are at the first in the list
-	{
-	    @last=@others; # the first one
-	    $tag="first";
-	}
-	if (@last != @others) # skip over the first one
-	{
-#### EMIT THE LAST RUN
-##TODO ----------
-	    finish_way ($wayid,\@run,$tag); # finish the run list
-	    $segment++;
-	    $tag = "segment $segment";
-#######################################
-	    ### new run starting
-	    warn "node $nd is connected to ways: " . join (",",@others) . "\n" if $debug;
-	    warn "Last Run:connected to " . join (",",@last) . "\n" if $debug;
-	    warn "Starting new run\n" if $debug;
-	    # get the last from the old run
-	    my $last = pop @run; #
-	    @run=();
-	    warn "adding into way:$wayid node:$last\n" if $debug;
-	    push @run,$last;
-## reporting
-	    if ($#others > 0)
-	    {
-		# many others
-		warn "Run : connected to " . join (",",@others) . "\n" if $debug;
-	    }
-	    else
-	    {
-		# on other
-		if ($others[0] == $wayid)
-		{
-		    warn "Just this way :$wayid\n" if $debug;
-#		    push @run,$nd;
-		}
-		else
-		{
-		    die "wtf";
-		}
-		#warn "$nd is not connected?" . join (",",@others) ;
-	    }
-	}
-	else
-	{
-#	    same as before, add to the run
-	    warn "duplicate in way:$wayid  node:$nd\n" if $debug;
-	}
-	###
-#	print "NODE $nd is connected to " . join (",",@others) . "\n";	
-	@last=@others;
-    }
-    #########################
-    warn "Finish up run\n" if $debug;
-    finish_way ($wayid,\@run, "last");
-    
-    warn "way done $wayid\n" if $debug;
-#####################################################################
-    # emit the last element in the loop
-    ############################################################    
 }
 
 sub way_in_node
