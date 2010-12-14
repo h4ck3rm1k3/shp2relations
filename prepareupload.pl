@@ -118,9 +118,9 @@ sub make_new_way
     map {if (!$seennd{$_}++){push (@newlist,$_);} } @_;  # all the new points to add 
     if (@newlist)
     {
-	if ($#newlist == 0)
+	if ($#newlist <= 0)
 	{
-	    warn "cannot have only one node in way" if $debug;
+	    warn "cannot have only one or zero nodes in way" if $debug;
 	}
 	else
 	{
@@ -183,63 +183,94 @@ sub remove_duplicate_ways
 	    while (@relnodes)
 	    {
 		my $nd = shift @relnodes; # take one off the start
-		push @newpoints,$nd;
+		if (@newpoints)
+		  {
+		    if ($newpoints[-1] ne $nd)
+		      {
+			push @newpoints,$nd;
+		      }
+		  }
+		else
+		  {
+		    push @newpoints,$nd; #first
+		  }
 			       
 		# split on each unique combination of the arcs.. we want fine cuttting
-		my $str= join (",",map {
-		  if ($_->[2])
-		    {
-		      $lastway=$_->[2]; 
-		    }
-		  # transform the ways to relationships, 
-		  die "no data" unless $_->[2];
-		  my $rel1=$ways{$_->[2]}->{relationship} ;
-		  my $rel2=$ways{$_->[3]}->{relationship} || $rel1 ;
+		
+		# my $str= join (",",map {
+		#   if ($_->[2])
+		#     {
+		#       $lastway=$_->[2]; 
+		#     }
+		#   # transform the ways to relationships, 
+		#   die "no data" unless $_->[2];
+		#   my $rel1=$ways{$_->[2]}->{relationship} ;
+		#   my $rel2=$ways{$_->[3]}->{relationship} || $rel1 ;
 		      
-		  $rel1 .   "|"    . $rel2;
+		#   $rel1 .   "|"    . $rel2;
 		  
-		} (@{$node_arcs{$nd}}));
+		# } (@{$node_arcs{$nd}}));
+		my $str= scalar(@{$node_arcs{$nd}}); # just take the length of the arcs
+		
 		warn "node $nd has arcs $str\n";
+
+
 		if ($otherway eq "")
 		{
 		    $otherway=$str;
 		}
 		if ($str ne $otherway)
 		{
-		    if ($count > 0)
+#		  if ($count > 0)
 		    {
-			warn " $str ne $otherway, going to make new way $rel contains" . join (",",@newpoints) . "\n";	
-			make_new_way(
-				     $lastway,
-				     @newpoints
-				    );
-			@newpoints=($nd); # add the last node to the first 
-			$otherway=$str;
+		      warn " $str ne $otherway, going to make new way $rel contains" . join (",",@newpoints) . "\n";	
+		      if ($#newpoints < 2)
+			{			  
+			  warn "too few points";
+			}
+		      
+		      if ($count > 1)
+			{
+			  make_new_way(
+				       $lastway,
+				       @newpoints
+				      );
+			  @newpoints=($nd); # add the last node to the first 		     
+			  $otherway=""; #reset the checking
+			}
+		      else
+			{
+			  #$otherway=""; #skip this first one...
+			  warn "we need to decide here what to do, lets print some debug info and look at it.";			 		  
+			}
+
 		    }
-		    else
-		    {
-			# add the points to the end
-			push @relnodes,@newpoints;
-			@newpoints=($nd);# start 
-		    }
-		    $count++;
+		  # else
+		  #   {
+		  #     # add the points to the end, only if it is not startin		      
+		  #     warn "adding first section to the end " . join (",",@newpoints) . "\n";
+		  #     push @relnodes,@newpoints;
+		  #     @newpoints=($nd);# start 
+		  #     $otherway=""; #reset the checking
+		  #   }
+
+		  $count++;
 		}
 		$lastnode=$nd; # save the last node
-	    }# each node in old nodes
-	} # if ways
+	      }# each node in old nodes
+	  } # if ways
 	warn "leftovers for rel:$rel lastway:$lastway   contains " . join (",",@newpoints) . "\n";	
-
+	
 	if ($#newpoints >0)
-	{
+	  {
 	    # these leftovers should be tried to be combined with the rest of the nodes
 	    # have a situation where these nodes should be joined with the rest of the nodes.
 	    make_new_way($lastway,@newpoints);	
-	}
-    
-    } # each rel
+	  }
+	
+      } # each rel
     # then we add those parts to the new relations.
-
-    # add the points to a new list 
+    
 
 }
 
