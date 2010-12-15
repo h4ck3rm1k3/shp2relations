@@ -21,7 +21,7 @@ my %tags; # store the tags
 
 my $newids = -3000000; # we give new objects ids starting here
 my $current_way;
-my $debug=0;
+my $debug=1;
 my %ways;
 my %waystring;
 # just store the last node seen an used that.
@@ -48,9 +48,9 @@ if we find a duplicate segment, we can replace it immediatly.
 
 
 my %ways_to_split;
-my %node_arcs;
-# {NODE ID} -> {in_arcs} = list
-# {NODE ID} -> {out_arcs} = list
+my %node_arcs; 
+# filled by add_arc_to_node, called by process_waynd
+
 
 sub undup
 {
@@ -65,6 +65,43 @@ sub undup
 }
 
 
+# sub characterize_way
+# {			       
+#     # split on each unique combination of the arcs.. we want fine cuttting   
+#     # my $str= join (",",map {
+#     #   if ($_->[2])
+#     #     {
+#     #       $lastway=$_->[2]; 
+#     #     }
+#     #   # transform the ways to relationships, 
+#     #   die "no data" unless $_->[2];
+#     #   my $rel1=$ways{$_->[2]}->{relationship} ;
+#     #   my $rel2=$ways{$_->[3]}->{relationship} || $rel1 ;    
+#     #   $rel1 .   "|"    . $rel2;    
+#     # } (@{$node_arcs{$nd}}));    
+# }
+
+
+sub count_arcs_in_node
+{
+    my $n=shift;
+    
+    my $count =0;
+
+    foreach my $i (@{$node_arcs{$n}})
+    {
+	if ($i->[3]) # to node
+	{
+	    $count++;
+	}
+
+	if ($i->[2]) # from node
+	{
+	    $count++;
+	}
+    }
+    return $count;
+}
 
 sub add_arc_to_node
 {
@@ -84,8 +121,7 @@ sub add_arc_to_node
 		    if ($to_nodeid == $i->[1]) # to node
 		    {
 			# match
-#		    warn "duplicate" if $debug;
-			warn "duplicate tuplie $from_nodeid -> $to_nodeid : in way" . $in_way . "\n" if $debug;
+			warn "duplicate tuple $from_nodeid -> $to_nodeid : in way" . $in_way . "\n" if $debug;
 
 		    }
 		}
@@ -95,9 +131,9 @@ sub add_arc_to_node
 		    {
 			# match in the other direction
 			$i->[3]=$in_way; # store the opposite direction
-#			warn "found opposite way $to_nodeid -> $from_nodeid : new way" . $in_way . " old way : ". $i->[2];
+			warn "found opposite way $to_nodeid -> $from_nodeid : new way" . $in_way . " old way : ". $i->[2] if $debug;
 			$ways_to_split{$i->[3]}=$i->[2];
-			return;
+#			return; dont return, we need the duplicate.
 		    }
 		}
 	    }       
@@ -138,9 +174,33 @@ sub make_new_way
 }
 
 
+sub rotate_relation
+  {
+    my @relnodes=@_;
+    my @neworder;
+
+    while (@relnodes)
+      {
+	my $nd = shift @relnodes; # take one off the start
+
+	push @neworder,$nd;
+	
+	my $arccount=count_arcs_in_node($nd);
+	if ( $arccount > 2) # just take the length of the arcs
+	  {
+	    #stop
+	    return (@relnodes,@neworder);
+	  }
+
+      }
+    return @neworder;
+
+  }
+
+  
 sub remove_duplicate_ways
 {
-    warn "remove_duplicate_ways\n";
+    warn "remove_duplicate_ways\n" if $debug;
     # after we have looked at all the ways, we can remove the duplicates
 
     # the new side is on the left, the old side on the right.
@@ -152,126 +212,119 @@ sub remove_duplicate_ways
     {
 	my @relnodes; # an array of all nodes in the relationship
 	my $lastway=0;
+
+	## RESOLVE ALL RELATIONS, make one big array
 	foreach my $wayid ( @{$rels{$rel}})
 	{
-	    warn "looking at $wayid \n";	
-	    #foreach my $wayid (sort keys %ways)
-	    ##   {
-
-	    # }	  
+	    warn "looking at $wayid \n" if $debug;
 	    push @relnodes,@{$ways{$wayid}->{nodes}};
 	    $lastway=$wayid;
 	}
 
-	warn "relation $rel has ". join (",",@relnodes). "\n";
-	warn "last way is $lastway\n";
+	warn "relation $rel had ". join (",",@relnodes). "\n" if $debug;
+	# now rotate the relation until we find a point used by many 
+	@relnodes=rotate_relation @relnodes;	
+
+	warn "relation $rel has now ". join (",",@relnodes). "\n" if $debug;
+	warn "last way is $lastway\n" if $debug;
 
 #	my $rel =$ways{$wayid}->{relationship};
 	my @newpoints=();
 	my $count =0;
+	my $length =scalar(@relnodes);
 	my $lastnode=0;
+
+	warn "relation $rel contains" . join (",",@relnodes) . "\n" if $debug;
 	
-	# the first set of nodes must be not processed until the end
-	# we will combine then with the end nodes.
-
-#	if ($ways{$wayid})
+	my $otherway="";	    
+	while (@relnodes)
 	{
-#	    my @oldnodes= @{$ways{$wayid}->{nodes}};
-#	    warn "oldway $wayid contains" . join (",",@oldnodes) . "\n";	
-
-	    my $otherway="";	    
-	    while (@relnodes)
+	    my $nd = shift @relnodes; # take one off the start
+	    my $arccount= count_arcs_in_node($nd); # just take the length of the arcs		
+	    warn "node $nd has arcs $arccount\n" if $debug;
+	    
+	    if ($otherway eq "")
 	    {
-		my $nd = shift @relnodes; # take one off the start
-		if (@newpoints)
-		  {
-		    if ($newpoints[-1] ne $nd)
-		      {
-			push @newpoints,$nd;
-		      }
-		  }
+		$otherway=$arccount;
+	    }
+	    if ($arccount ne $otherway)
+	    {
+		warn "count($count) $arccount ne $otherway, going to make new way $rel contains" . join (",",@newpoints) . "\n" if $debug;
+		if ($#newpoints < 1)
+		{			  
+		    warn "too few points" if $debug;
+		}
 		else
-		  {
-		    push @newpoints,$nd; #first
-		  }
-			       
-		# split on each unique combination of the arcs.. we want fine cuttting
-		
-		# my $str= join (",",map {
-		#   if ($_->[2])
-		#     {
-		#       $lastway=$_->[2]; 
-		#     }
-		#   # transform the ways to relationships, 
-		#   die "no data" unless $_->[2];
-		#   my $rel1=$ways{$_->[2]}->{relationship} ;
-		#   my $rel2=$ways{$_->[3]}->{relationship} || $rel1 ;
-		      
-		#   $rel1 .   "|"    . $rel2;
-		  
-		# } (@{$node_arcs{$nd}}));
-		my $str= scalar(@{$node_arcs{$nd}}); # just take the length of the arcs
-		
-		warn "node $nd has arcs $str\n";
-
-
-		if ($otherway eq "")
 		{
-		    $otherway=$str;
-		}
-		if ($str ne $otherway)
-		{
-#		  if ($count > 0)
+
+		    # only add the other pint if the count is greater than 2
+		    if ($arccount > 1)
 		    {
-		      warn " $str ne $otherway, going to make new way $rel contains" . join (",",@newpoints) . "\n";	
-		      if ($#newpoints < 2)
-			{			  
-			  warn "too few points";
-			}
-		      
-		      if ($count > 1)
+			if (@newpoints)
 			{
-			  make_new_way(
-				       $lastway,
-				       @newpoints
-				      );
-			  @newpoints=($nd); # add the last node to the first 		     
-			  $otherway=""; #reset the checking
+			    if ($newpoints[-1] ne $nd)
+			    {
+				push @newpoints,$nd;
+			    }
 			}
-		      else
+			else
 			{
-			  #$otherway=""; #skip this first one...
-			  warn "we need to decide here what to do, lets print some debug info and look at it.";			 		  
+			    push @newpoints,$nd;
 			}
-
 		    }
-		  # else
-		  #   {
-		  #     # add the points to the end, only if it is not startin		      
-		  #     warn "adding first section to the end " . join (",",@newpoints) . "\n";
-		  #     push @relnodes,@newpoints;
-		  #     @newpoints=($nd);# start 
-		  #     $otherway=""; #reset the checking
-		  #   }
-
-		  $count++;
+		    elsif ($count == 0)
+		    {
+			push @newpoints,$nd; ## add in the first one anyway
+		    }
+		    else
+		    {
+			push @newpoints,$nd; ## add in the last one anyway!
+		    }
+		    
+		    make_new_way(
+			$lastway,
+			(
+			 @newpoints
+			 #,$nd # add in the current node to close the way, but only on some.
+			) 
+			);
+		    @newpoints=($nd); # add the last node to the first 		     
+		    $otherway=""; #reset the checking
 		}
-		$lastnode=$nd; # save the last node
-	      }# each node in old nodes
-	  } # if ways
-	warn "leftovers for rel:$rel lastway:$lastway   contains " . join (",",@newpoints) . "\n";	
+		
+	    } # str ne other way
+	    
+	    
+	    ## add the new points after the decisions made
+	    if (@newpoints)
+	    {
+		if ($newpoints[-1] ne $nd)
+		{
+		    push @newpoints,$nd;
+		}
+	    }
+	    else
+	    {
+		push @newpoints,$nd; #first
+	    }		
+	    $count++;		
+	    $lastnode=$nd; # save the last node
+	    
+	} #while
+	
+	warn "leftovers for rel:$rel lastway:$lastway   contains " . join (",",@newpoints) . "\n" if $debug;
 	
 	if ($#newpoints >0)
-	  {
+	{
 	    # these leftovers should be tried to be combined with the rest of the nodes
-	    # have a situation where these nodes should be joined with the rest of the nodes.
+		# have a situation where these nodes should be joined with the rest of the nodes.
 	    make_new_way($lastway,@newpoints);	
-	  }
+	}
 	
-      } # each rel
+    } # each rel
     # then we add those parts to the new relations.
     
-
+    
 }
 
 sub begin_way
@@ -326,8 +379,7 @@ sub checkpair
     if ($seenfilter{"${first}|${second}"}++)
     {
 	warn "seen pair: first:${first} second:${second} skipping" if $debug;
-	# we have seen pair in reverse, bail
-	#	return;
+
 	return 0;
     }
     return 1;
@@ -352,12 +404,8 @@ sub process_waynd
 {
     my $id=shift;
     warn "process_waynd $id in way $current_way\n" if $debug;
-    if ($replace{$id})
-    {
-	my $new=$replace{$id};
-	warn "adding replacing $id with $new in way $current_way\n" if $debug;
-	$id=$new;	
-    }
+    $id = undup ($id);
+
     # dont add duplicates in array
     # look if the nodesways(what ways are in this node)
     if (!way_in_node($current_way,$id))
@@ -387,18 +435,17 @@ sub process_waynd
 	}
 	else
 	{
-#	    warn "last in way node :$lastitem in way:$current_way\n" if $debug;
+	    warn "last in way node :$lastitem in way:$current_way\n" if $debug;
 	    if ($lastitem ne $id) # not the last in the way
 	    {
 		my $other=0;
-		
-	    
+			    
 		# build up the new structure
 		add_arc_to_node($lastitem, $id, $current_way);
 		
 		#  if (checkpair($lastinway, $id)) # remove all duplicate ways
 		{
-#		    warn "in way $current_way adding pair lastinway :$lastinway | lastitem:$lastitem, node:$id\n" if $debug;
+		    warn "in way $current_way adding pair lastitem:$lastitem, node:$id\n" if $debug;
 		    
 		    push (@{$ways{$current_way}->{nodes}},$id);# store the node     
 		    
@@ -416,7 +463,7 @@ sub process_waynd
 	warn "start new way: $current_way" if $debug;
 	#start a new way
 	push (@{$ways{$current_way}->{nodes}},$id);# store the node     
-#	warn "null :$current_way " . Dumper($ways{$current_way});
+	warn "null :$current_way " . Dumper($ways{$current_way}) if $debug;
     }
 
 #    $debug=0;
@@ -467,7 +514,7 @@ sub consumeattrs
     
     if (s/action=${QUOTE}modify${QUOTE}\s*//)
     {
-#	    warn "check $_";
+#	    warn "check $_" if $debug;
     }
     
     if (/action=${QUOTE}delete${QUOTE}/)
@@ -480,7 +527,7 @@ sub consumeattrs
 	#remove version
     }
     return 1;
-#    warn "done $_";
+#    warn "done $_" if $debug;
 }
 
 sub parse
@@ -506,7 +553,6 @@ sub parse
 	    if (s/lon=${QUOTE}($coordpattern)${QUOTE} //)
 	    {
 		$lon=$1;
-#	    warn "LON $1";
 	    }
 	    else
 	    {
@@ -516,7 +562,6 @@ sub parse
 	    if (s/lat=${QUOTE}($coordpattern)${QUOTE} //)
 	    {
 		$lat=$1;
-#	    warn "LAT $1";
 	    }
 	    else
 	    {
@@ -578,7 +623,6 @@ sub parse
 		# now we want to post process this way
 		# cut the way on all the intersections with all other relations
 		# remove other ways that are duplicate, match it 100%
-#		warn "member $_";
 		post_process_way($current_rel,$1); 
 	    }
 	}
@@ -590,7 +634,6 @@ sub parse
 	    # now we want to post process this way
 	    # cut the way on all the intersections with all other relations
 	    # remove other ways that are duplicate, match it 100%
-#	warn "member $_";
 	    post_process_way($current_rel,$1); 
 	}
 	elsif (/<member type=${QUOTE}node${QUOTE} ref=${QUOTE}(-?\d+)${QUOTE} role=${QUOTE}admin_centre${QUOTE}\s?\/>/){}
@@ -598,7 +641,6 @@ sub parse
 	{
 	    while (s/<tag k=${QUOTE}([^\/\${QUOTE}]+)${QUOTE} v=${QUOTE}([^\/\${QUOTE}]+)${QUOTE}\s*\/>//)
 	    {
-#	    warn "$2";
 		if ($current_rel)
 		{
 		    $tags{$current_rel}{$1}=$2;
@@ -645,8 +687,8 @@ sub transfer_ways
 	}
 	else
 	{
-#	warn "no rel found, must be new";
-#	warn Dumper($ways{$wayid});
+	    warn "no rel found, must be new" if $debug;
+	    warn Dumper($ways{$wayid}) if $debug;
 	}
     }	
 }
