@@ -141,7 +141,7 @@ sub count_arcs_in_node
     return $count;
 }
 
-my @opposites_to_check;
+
 
 sub add_arc_to_node # called by process_waynd, while reading in, first pass
 {
@@ -180,32 +180,6 @@ sub add_arc_to_node # called by process_waynd, while reading in, first pass
 			    warn "found opposite way $to_nodeid -> $from_nodeid : new way" . $in_way . " old way : ". $i->[2] if $debug;
 			    $ways_to_split{$i->[3]}=$i->[2];
 			    
-			    push @opposites_to_check, $i; # add this arc into a list of arcs to check later
-
-# 			    if ($node_arcs{$in_way})
-# 			    {
-# 				warn "adding arcs from $in_way to $i->[2]\n";
-# 				my @other= @{$node_arcs{$in_way}};				
-# 				push @{$node_arcs{$i->[2]}},@other;
-# 			    }
-# 			    else
-# 			    {
-# 				warn "missing $in_way\n";
-# 			    }
-
-# 			    if ($node_arcs{$i->[2]})
-# 			    {
-# 				warn "adding arcs from $i->[2] to $in_way\n";
-# 				my @other= @{$node_arcs{$i->[2]}};     		
-# 				push @{$node_arcs{$i->[3]}},@other;
-# 			    }
-# 			    else
-# 			    {
-# 				warn "missing $in_way\n";
-# 			    }
-
-
-#			    push @{$node_arcs{$n}}, @{$node_arcs{$in_way}};
 
 			}
 			#return; # return, we dont need the duplicate.
@@ -244,9 +218,6 @@ sub make_new_way
 	    $newids--; # allocate a new id for the way
 	    push @{$ways{$newids}->{nodes}},@newlist;
 	    push @{$waymapping{$wayid}},$newids; # map the old id onto the new
-
-
-
 
 	    warn "new way $newids contains" . join (",",@{$ways{$newids}->{nodes}}) . "\n" if $debug;
 	}
@@ -377,18 +348,10 @@ sub connect_way_loop
     # make sure the first item of the next way is the last of the prev
 }
 
-# 
-sub process_opposites
-{
-    foreach my $x ( @opposites_to_check)
-    {
-	warn "Check Opposites" . Dumper ($x);
-    }
-}
   
 sub remove_duplicate_ways
 {
-    process_opposites;
+
     warn "remove_duplicate_ways\n" if $debug;
     # after we have looked at all the ways, we can remove the duplicates
 
