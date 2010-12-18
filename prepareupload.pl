@@ -64,22 +64,6 @@ sub undup
 }
 
 
-# sub characterize_way
-# {			       
-#     # split on each unique combination of the arcs.. we want fine cuttting   
-#     # my $str= join (",",map {
-#     #   if ($_->[2])
-#     #     {
-#     #       $lastway=$_->[2]; 
-#     #     }
-#     #   # transform the ways to relationships, 
-#     #   die "no data" unless $_->[2];
-#     #   my $rel1=$ways{$_->[2]}->{relationship} ;
-#     #   my $rel2=$ways{$_->[3]}->{relationship} || $rel1 ;    
-#     #   $rel1 .   "|"    . $rel2;    
-#     # } (@{$node_arcs{$nd}}));    
-# }
-
 
 sub count_arcs_in_node_test
 {
@@ -142,6 +126,23 @@ sub count_arcs_in_node
 }
 
 
+sub append_node_to_way
+{
+    my $way_id=shift;
+    my @nodes=@_;
+
+    #calculate average 
+    push @{$ways{$way_id}->{nodes}},@nodes;
+
+}
+
+sub prepend_node_to_way
+{
+    my $way_id=shift;
+    my @nodes=@_;
+
+    unshift @{$ways{$way_id}->{nodes}},@nodes;
+}
 
 sub add_arc_to_node # called by process_waynd, while reading in, first pass
 {
@@ -200,6 +201,39 @@ sub add_arc_to_node # called by process_waynd, while reading in, first pass
 }
 
 
+sub lookup_waystring
+{
+#    my $id=shift;
+    my @items=@_;
+    my $str= join (",", sort @items);
+    
+    my $oldid=$waystring{$str};
+
+#    if (!$oldid)
+#    {
+#	$oldid=$waystring{$str}=$id;
+#    }
+#    return 0;
+    return $oldid;
+}
+
+sub save_waystring
+{
+    my $id=shift;
+    my @items=@_;
+    my $str= join (",", sort @items);
+    
+    my $oldid=$waystring{$str};
+
+    if (!$oldid)
+    {
+	$oldid=$waystring{$str}=$id;
+
+    }
+   return $oldid;
+}
+my %reversed_strings;
+
 sub make_new_way
 {
     my $wayid =shift||die "no way id "; # old way
@@ -215,11 +249,28 @@ sub make_new_way
 	}
 #	else
 	{
-	    $newids--; # allocate a new id for the way
-	    push @{$ways{$newids}->{nodes}},@newlist;
-	    push @{$waymapping{$wayid}},$newids; # map the old id onto the new
 
-	    warn "new way $newids contains" . join (",",@{$ways{$newids}->{nodes}}) . "\n" if $debug;
+	    # check for duplicates
+	#    %waystring
+
+	    my $oldid=lookup_waystring(@newlist);
+	    if (!$oldid)
+	    {
+		$newids--; # allocate a new id for the way
+
+		append_node_to_way ($newids,@newlist);
+		push @{$waymapping{$wayid}},$newids; # map the old id onto the new
+
+		warn "new way $newids contains" . join (",",@{$ways{$newids}->{nodes}}) . "\n" if $debug;
+
+		save_waystring($newids,@newlist)
+	    }
+	    else
+	    {
+		warn "reusing old way $oldid";
+		$reversed_strings{$oldid}++;
+		push @{$waymapping{$wayid}},$oldid; # map the old id onto the new
+	    }
 	}
     }
     else
@@ -252,9 +303,6 @@ sub rotate_relation
 
       }
 
-    # close the relation 
-
-
     push @neworder,$neworder[0] unless $neworder[0]==$neworder[-1];
 
     return @neworder;
@@ -272,23 +320,63 @@ sub report_way
 
 sub connect_way
 {
+    return;
     my $prev=shift;
     my $next=shift;
     return unless $prev;
     return unless $next;
+
+    if ($reversed_strings{$prev})
+    {
+	if ($reversed_strings{$next})
+	{
+	    warn "REVERSED BOTH";
+
+	}
+	else
+	{
+	    warn "REVERSED PREV";
+	}
+	
+    }
+    else
+    {
+	if ($reversed_strings{$next})
+	{
+	    
+	    warn "REVERSED NEXT";
+	}
+	else
+	{
+	    warn "NOTHING REVERSED";
+	}
+    }
+
     my $b=@{$ways{$prev}->{nodes}}[0];
     my $last=@{$ways{$prev}->{nodes}}[-1];
-
-    #
+    
     my $first=@{$ways{$next}->{nodes}}[0];
     my $l=@{$ways{$next}->{nodes}}[-1];
-
-    
+		
     warn "checking if $prev ($b - $last) is connected to $next ($first - $l)\n";
+    if ($b == $last)
+    {
+	warn "repairing : prev is only one node, merge into the next\n";
 
-    if ($last == $first)
+	append_node_to_way ($next,$last);
+	report_way ($next);
+    }
+    elsif ($l == $first)
+    {
+	warn "repairing : next is only one node, merge into the prev\n";
+
+	append_node_to_way ($prev,$first);
+	report_way ($prev);
+    }
+    elsif ($last == $first)
     {
 	#OK
+	warn "repairing : last $last == first $first\n";
     }
     else
     {
@@ -298,24 +386,27 @@ sub connect_way
 	    
 	    my $first_c= count_arcs_in_node2($first); 
 	    my $last_c = count_arcs_in_node2($last); 
-
+	    
 # first and last
 	    warn "check_count $first has $first_c  and $last has $last_c\n";
 	    if ($first_c > $last_c)
 	    {
 		warn "repairing $prev ($b - $last) by appending $first to connect to $next ($first - $l)\n";
-		push @{$ways{$prev}->{nodes}},$first;
+
+		append_node_to_way ($prev,$first);
 		report_way ($prev);
 	    }
 	    else
 	    {
 		warn "repairing connecting $prev ($b - $last) by prepending $last to the next way $next ($first - $l)\n";
-		unshift @{$ways{$next}->{nodes}},$last;
+
+		prepend_node_to_way($next,$last);
+
 		report_way ($next);
 	    }
-	}
-	
-    }    
+	}	    
+    }
+
 
     # make sure the first item of the next way is the last of the prev
 }
@@ -341,7 +432,8 @@ sub connect_way_loop
 	# if they originate from the same point, dont connect them
 
 	warn "repairing loop $prev ($b - $last) by appending $first to connect to $next ($first - $l)\n";
-	push @{$ways{$prev}->{nodes}},$first;
+
+	append_node_to_way ($prev,$first);
 
     }    
 
@@ -376,6 +468,7 @@ sub remove_duplicate_ways
 	{
 	    warn "looking at $wayid \n" if $debug;
 	    push @relnodes,@{$ways{$wayid}->{nodes}};
+
 	    $lastway=$wayid;
 	}
 
@@ -585,7 +678,8 @@ sub process_waynd
 	{
 	    warn "lastitem is null for $current_way" if $debug;
 #	    warn Dumper($ways{$current_way});
-	    push (@{$ways{$current_way}->{nodes}},$id);# store the node     
+	    append_node_to_way($current_way,$id)
+
 	}
 	else
 	{
@@ -601,8 +695,7 @@ sub process_waynd
 		{
 		    warn "in way $current_way adding pair lastitem:$lastitem, node:$id\n" if $debug;
 		    
-		    push (@{$ways{$current_way}->{nodes}},$id);# store the node     
-		    
+		    append_node_to_way($current_way,$id);
 		    
 		    # only store the last node seen if it is not a duplicate
 		    $last_node_seen=$id;
@@ -616,7 +709,7 @@ sub process_waynd
     {
 	warn "start new way: $current_way" if $debug;
 	#start a new way
-	push (@{$ways{$current_way}->{nodes}},$id);# store the node     
+	append_node_to_way($current_way,$id);
 	warn "null :$current_way " . Dumper($ways{$current_way}) if $debug;
     }
 
