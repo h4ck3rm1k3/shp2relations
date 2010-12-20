@@ -86,7 +86,7 @@ sub count_arcs_in_node_test
 	    }
 	}
     }
-    warn "node $n has $count arcs \n";
+    warn "node $n has $count arcs \n" if $debug;
 #    warn Dumper($node_arcs{$n});
 #    warn Dumper(\%ways);
     return $count;
@@ -112,16 +112,15 @@ sub count_arcs_in_node
 	{
 	    my $x=$i->[2] || "0";
 	    my $y=$i->[3] || "0";
-	    
 	    if(!($ways{$x . $y}++))
 	    {
 		$count++;
 	    }
 	}
     }
-    warn "node $n has real count $count arcs \n";
-    warn Dumper($node_arcs{$n});
-    warn Dumper(\%ways);
+    warn "node $n has real count $count arcs \n" if $debug;
+#    warn Dumper($node_arcs{$n}) if $debug;
+#    warn Dumper(\%ways) if $debug;
     return $count;
 }
 
@@ -131,8 +130,33 @@ sub append_node_to_way
     my $way_id=shift;
     my @nodes=@_;
 
-    #calculate average 
-    push @{$ways{$way_id}->{nodes}},@nodes;
+    my $last = $ways{$way_id}->{nodes}->[-1] || 0; #could be empty return carp "no nodes to append!";
+    my $first =$nodes[0] || return warn "no nodes in the list";
+
+    my @newways = ($way_id);
+
+    if ($waymapping{$way_id})
+      {
+#	push @newways, @{$waymapping{$way_id}};
+	warn "newways ".  join(",",@newways);
+      }
+
+    foreach my $way_id (@newways)
+      {
+
+	if ($nodes[0] != $last)
+	  {
+	    warn "appending adding ". join (",",@nodes) . " to $way_id";
+	push @{$ways{$way_id}->{nodes}},@nodes;
+	report_way2 ($way_id);
+    }
+    else
+    {
+	warn "ERROR: not appending ". join (",",@nodes) . " to $way_id";
+	report_way2 ($way_id);
+
+      }
+  }
 
 }
 
@@ -141,8 +165,30 @@ sub prepend_node_to_way
     my $way_id=shift;
     my @nodes=@_;
 
-    unshift @{$ways{$way_id}->{nodes}},@nodes;
-}
+    my @newways = ($way_id);
+
+    if ($waymapping{$way_id})
+      {
+#	push @newways, @{$waymapping{$way_id}};
+	warn "newways ".  join(",",@newways);
+      }
+
+    foreach my $way_id (@newways)
+      {
+	if ($nodes[-1] != $ways{$way_id}->{nodes}->[0])
+	  {
+	    warn "prepending adding ". join (",",@nodes) . " to $way_id";
+	    unshift @{$ways{$way_id}->{nodes}},@nodes;
+	    report_way2 ($way_id);
+	  }
+	else
+	  {
+	    warn "ERROR : not prepending ". join (",",@nodes) . " to $way_id";
+	    report_way2 ($way_id);
+	  }
+      }
+
+  }
 
 sub add_arc_to_node # called by process_waynd, while reading in, first pass
 {
@@ -183,7 +229,7 @@ sub add_arc_to_node # called by process_waynd, while reading in, first pass
 			    
 
 			}
-			#return; # return, we dont need the duplicate.
+			return; # return, we dont need the duplicate.
 		    }
 		}
 	    }       
@@ -267,7 +313,7 @@ sub make_new_way
 	    }
 	    else
 	    {
-		warn "reusing old way $oldid";
+		warn "reusing old way $oldid" if $debug;
 		$reversed_strings{$oldid}++;
 		push @{$waymapping{$wayid}},$oldid; # map the old id onto the new
 	    }
@@ -303,7 +349,10 @@ sub rotate_relation
 
       }
 
-    push @neworder,$neworder[0] unless $neworder[0]==$neworder[-1];
+    if(@neworder)
+    {
+	push @neworder,$neworder[0] unless $neworder[0]==$neworder[-1];
+    }
 
     return @neworder;
 
@@ -315,27 +364,142 @@ sub report_way
     my $way=shift;
     my $a=@{$ways{$way}->{nodes}}[0];
     my $z=@{$ways{$way}->{nodes}}[-1];
-    warn "report way $way starts at $a and ends at $z\n";
+    warn "report way $way starts at $a and ends at $z\n" if $debug;
 }
+
+sub report_way2
+{
+    my $way=shift;
+    my $a=@{$ways{$way}->{nodes}}[0];
+    my $z=@{$ways{$way}->{nodes}}[-1];
+    my $str= join (",", @{$ways{$way}->{nodes}});
+    warn "report way $way starts at $a and ends at $z\n details $str\n";
+}
+
+sub scan_prepend
+{
+    my $wayid=shift;
+    my $node=shift;
+}
+
+sub scan_append
+{
+    my $wayid=shift;
+    my $node=shift;
+}
+
+sub scan_attach # from find_connections
+{
+    my $wayid=shift;
+    my $node=shift;
+
+    foreach my $i (@{$node_arcs{$node}})
+    {
+	if ($wayid ==$i->[2])
+	{
+	    warn "check way A: $wayid  node $node and $i->[2]";
+	}
+	else
+	{
+	    if ($node==$i->[0])
+	    {
+		
+		my @newways;
+		if ($waymapping{$i->[3]})
+		{
+		    push @newways, @{$waymapping{$i->[3]}};
+		    warn "newway2 ".  join(",",@newways);
+		}
+		if ($waymapping{$i->[2]})
+		{
+		    push @newways, @{$waymapping{$i->[2]}};
+		    warn "newways ".  join(",",@newways);
+		}
+		my $found=0;
+		foreach my $newway (@newways)
+		{
+		    if (($wayid ==$newway) && ($i->[3]) && (!$found))
+		    {
+			warn "append way B: $wayid  node $node and $i->[0]/$i->[1] to old way : $i->[2]";
+#			warn Dumper($i);
+			append_node_to_way($i->[2],$node);
+			prepend_node_to_way($i->[3],$node);
+			$found =1;			
+		    }
+		}
+		
+		if (!$found)
+		{
+		    warn "prepend way A: $wayid  node $node and $i->[0]/$i->[1] to old way : $i->[2]";
+#		    warn Dumper($i);
+		# now we prepend this node to that node 
+		    prepend_node_to_way($i->[2],$node);
+
+		    if ($i->[3])
+		    {
+			append_node_to_way($i->[3],$node);
+		    }
+		}
+
+	    }
+	    else
+	    {
+		
+		warn "append way C: $wayid  node $node and $i->[0]/$i->[1] to old way : $i->[2]";
+#		warn Dumper($i);
+		append_node_to_way($i->[2],$node);
+		if ($i->[3])
+		{
+		    prepend_node_to_way($i->[3],$node);
+		}
+	    }
+
+	}
+#	warn "check way $wayid  node $node and $i->[3]";
+
+    }    
+}
+
+sub find_connections # from connect_way
+{
+    my $wayid =shift;
+    
+    # just scan all the other ways, if they have arcs then add them
+
+    my $b=@{$ways{$wayid}->{nodes}}[0];
+    my $e=@{$ways{$wayid}->{nodes}}[-1];    
+
+    if ($b == $e)
+    {
+	scan_attach($wayid,$b);
+    }
+#    scan_prepend $wayid,$b;
+#    scan_append  $wayid,$e;
+}
+
 
 sub connect_way
 {
-    return;
+
     my $prev=shift;
     my $next=shift;
     return unless $prev;
     return unless $next;
 
+    find_connections $prev;
+    find_connections $next;
+    return;
+
     if ($reversed_strings{$prev})
     {
 	if ($reversed_strings{$next})
 	{
-	    warn "REVERSED BOTH";
+	    warn "REVERSED BOTH" if $debug;
 
 	}
 	else
 	{
-	    warn "REVERSED PREV";
+	    warn "REVERSED PREV" if $debug;
 	}
 	
     }
@@ -344,11 +508,11 @@ sub connect_way
 	if ($reversed_strings{$next})
 	{
 	    
-	    warn "REVERSED NEXT";
+	    warn "REVERSED NEXT" if $debug;
 	}
 	else
 	{
-	    warn "NOTHING REVERSED";
+	    warn "NOTHING REVERSED" if $debug;
 	}
     }
 
@@ -358,17 +522,17 @@ sub connect_way
     my $first=@{$ways{$next}->{nodes}}[0];
     my $l=@{$ways{$next}->{nodes}}[-1];
 		
-    warn "checking if $prev ($b - $last) is connected to $next ($first - $l)\n";
+    warn "checking if $prev ($b - $last) is connected to $next ($first - $l)\n" if $debug;
     if ($b == $last)
     {
-	warn "repairing : prev is only one node, merge into the next\n";
+	warn "repairing : prev is only one node, merge into the next\n" if $debug;
 
 	append_node_to_way ($next,$last);
 	report_way ($next);
     }
     elsif ($l == $first)
     {
-	warn "repairing : next is only one node, merge into the prev\n";
+	warn "repairing : next is only one node, merge into the prev\n" if $debug;
 
 	append_node_to_way ($prev,$first);
 	report_way ($prev);
@@ -376,7 +540,7 @@ sub connect_way
     elsif ($last == $first)
     {
 	#OK
-	warn "repairing : last $last == first $first\n";
+	warn "repairing : last $last == first $first\n" if $debug;
     }
     else
     {
@@ -388,17 +552,17 @@ sub connect_way
 	    my $last_c = count_arcs_in_node2($last); 
 	    
 # first and last
-	    warn "check_count $first has $first_c  and $last has $last_c\n";
+	    warn "check_count $first has $first_c  and $last has $last_c\n" if $debug;
 	    if ($first_c > $last_c)
 	    {
-		warn "repairing $prev ($b - $last) by appending $first to connect to $next ($first - $l)\n";
+		warn "repairing $prev ($b - $last) by appending $first to connect to $next ($first - $l)\n" if $debug;
 
 		append_node_to_way ($prev,$first);
 		report_way ($prev);
 	    }
 	    else
 	    {
-		warn "repairing connecting $prev ($b - $last) by prepending $last to the next way $next ($first - $l)\n";
+		warn "repairing connecting $prev ($b - $last) by prepending $last to the next way $next ($first - $l)\n" if $debug;
 
 		prepend_node_to_way($next,$last);
 
@@ -431,7 +595,7 @@ sub connect_way_loop
     {
 	# if they originate from the same point, dont connect them
 
-	warn "repairing loop $prev ($b - $last) by appending $first to connect to $next ($first - $l)\n";
+	warn "repairing loop $prev ($b - $last) by appending $first to connect to $next ($first - $l)\n" if $debug;
 
 	append_node_to_way ($prev,$first);
 
@@ -441,7 +605,7 @@ sub connect_way_loop
 }
 
   
-sub remove_duplicate_ways
+sub remove_duplicate_ways # calls find_connections
 {
 
     warn "remove_duplicate_ways\n" if $debug;
@@ -467,17 +631,18 @@ sub remove_duplicate_ways
 	foreach my $wayid ( @{$rels{$rel}})
 	{
 	    warn "looking at $wayid \n" if $debug;
+	    die "$wayid has no nodes " unless @{$ways{$wayid}->{nodes}};
 	    push @relnodes,@{$ways{$wayid}->{nodes}};
 
 	    $lastway=$wayid;
 	}
-
+	die "no nodes " unless @relnodes;
 	warn "relation $rel had ". join (",",@relnodes). "\n" if $debug;
 	# now rotate the relation until we find a point used by many 
 	@relnodes=rotate_relation @relnodes;	
 
 	warn "relation $rel has now ". join (",",@relnodes). "\n" if $debug;
-	warn "relation $rel has now range:". join (",",$relnodes[0],$relnodes[-1]) . "\n";
+	warn "relation $rel has now range:". join (",",$relnodes[0],$relnodes[-1]) . "\n" if $debug;
 	warn "last way is $lastway\n" if $debug;
 
 #	my $rel =$ways{$wayid}->{relationship};
@@ -511,7 +676,7 @@ sub remove_duplicate_ways
 
 		if ($firstnewway ==0)
 		{
-		    warn "setting firstnew way $newway\n";
+		    warn "setting firstnew way $newway\n" if $debug;
 		    $firstnewway=$newway; # record the first way created for final loop checking, all rels are closed
 		}
 		if ($lastnewway !=0) # if we are not at the first way, connect previous
@@ -678,6 +843,7 @@ sub process_waynd
 	{
 	    warn "lastitem is null for $current_way" if $debug;
 #	    warn Dumper($ways{$current_way});
+# nodes is empty
 	    append_node_to_way($current_way,$id)
 
 	}
@@ -945,7 +1111,7 @@ sub emit_osm
     my $ofile=shift;
     open OUT,">$ofile";
 
-    #warn Dumper(\%waymapping); # dump out the ways 
+    warn  "Waymapping". Dumper(\%waymapping); # dump out the ways 
     # now we can emit the relationships with the new ways instead of the old ones.
     #####################################################
     ### now output the doc 
@@ -1037,9 +1203,9 @@ sub emit_osm
 	  parse $file;
 	}
 
-      
-      transfer_ways;
+      transfer_ways; # fills out the rels list.
       remove_duplicate_ways;
+
       emit_osm $outfile;
       
     };
