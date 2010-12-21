@@ -70,7 +70,7 @@ sub count_arcs_in_node_test
     my $n=shift;
     
     my $count =0;
-    my %ways;
+    my %tways;
     foreach my $i (@{$node_arcs{$n}})
     {
 
@@ -79,16 +79,16 @@ sub count_arcs_in_node_test
 	    my $x=$i->[$j];
 	    if ($x) # to node
 	    {
-		if(!($ways{$x}++))
+		if(!($tways{$x}++))
 		{
 		    $count+= abs($x);
 		}
 	    }
 	}
     }
-    warn "node $n has $count arcs \n" if $debug;
+#    warn "node $n has $count arcs \n" if $debug;
 #    warn Dumper($node_arcs{$n});
-#    warn Dumper(\%ways);
+
     return $count;
 }
 
@@ -103,7 +103,7 @@ sub count_arcs_in_node
     my $n=shift;
     
     my $count =0;
-    my %ways;
+    my %tways;
     foreach my $i (@{$node_arcs{$n}})
     {
 
@@ -112,7 +112,7 @@ sub count_arcs_in_node
 	{
 	    my $x=$i->[2] || "0";
 	    my $y=$i->[3] || "0";
-	    if(!($ways{$x . $y}++))
+	    if(!($tways{$x . $y}++))
 	    {
 		$count++;
 	    }
@@ -120,10 +120,9 @@ sub count_arcs_in_node
     }
     warn "node $n has real count $count arcs \n" if $debug;
 #    warn Dumper($node_arcs{$n}) if $debug;
-#    warn Dumper(\%ways) if $debug;
+
     return $count;
 }
-
 
 sub append_node_to_way
 {
@@ -147,18 +146,17 @@ sub append_node_to_way
 	if ($nodes[0] != $last)
 	  {
 	    warn "appending adding ". join (",",@nodes) . " to $way_id";
-	push @{$ways{$way_id}->{nodes}},@nodes;
-	report_way2 ($way_id);
-    }
-    else
-    {
-	warn "ERROR: not appending ". join (",",@nodes) . " to $way_id";
-	report_way2 ($way_id);
-
+	    push @{$ways{$way_id}->{nodes}},@nodes;
+	    report_way2 ($way_id);
+	  }
+	else
+	  {
+	    warn "ERROR: not appending ". join (",",@nodes) . " to $way_id";
+	    report_way2 ($way_id);
+	  }
       }
-  }
 
-}
+  }
 
 sub prepend_node_to_way
 {
@@ -220,13 +218,11 @@ sub add_arc_to_node # called by process_waynd, while reading in, first pass
 			if ($i->[3]==0)
 			{
 			    $i->[3]=$in_way; # store the opposite direction
-			    
 
 			    # now copy all the rows from the opposite to here 
 
 			    warn "found opposite way $to_nodeid -> $from_nodeid : new way" . $in_way . " old way : ". $i->[2] if $debug;
 			    $ways_to_split{$i->[3]}=$i->[2];
-			    
 
 			}
 			return; # return, we dont need the duplicate.
@@ -252,7 +248,6 @@ sub lookup_waystring
 #    my $id=shift;
     my @items=@_;
     my $str= join (",", sort @items);
-    
     my $oldid=$waystring{$str};
 
 #    if (!$oldid)
@@ -268,7 +263,6 @@ sub save_waystring
     my $id=shift;
     my @items=@_;
     my $str= join (",", sort @items);
-    
     my $oldid=$waystring{$str};
 
     if (!$oldid)
@@ -297,16 +291,12 @@ sub make_new_way
 	{
 
 	    # check for duplicates
-	#    %waystring
-
 	    my $oldid=lookup_waystring(@newlist);
 	    if (!$oldid)
 	    {
 		$newids--; # allocate a new id for the way
-
 		append_node_to_way ($newids,@newlist);
 		push @{$waymapping{$wayid}},$newids; # map the old id onto the new
-
 		warn "new way $newids contains" . join (",",@{$ways{$newids}->{nodes}}) . "\n" if $debug;
 
 		save_waystring($newids,@newlist)
@@ -352,6 +342,7 @@ sub rotate_relation
     if(@neworder)
     {
 	push @neworder,$neworder[0] unless $neworder[0]==$neworder[-1];
+
     }
 
     return @neworder;
@@ -518,10 +509,8 @@ sub connect_way
 
     my $b=@{$ways{$prev}->{nodes}}[0];
     my $last=@{$ways{$prev}->{nodes}}[-1];
-    
     my $first=@{$ways{$next}->{nodes}}[0];
     my $l=@{$ways{$next}->{nodes}}[-1];
-		
     warn "checking if $prev ($b - $last) is connected to $next ($first - $l)\n" if $debug;
     if ($b == $last)
     {
@@ -586,7 +575,6 @@ sub connect_way_loop
     my $first=@{$ways{$next}->{nodes}}[0];
     my $l=@{$ways{$next}->{nodes}}[-1];
 
-    
     if ($last == $first)
     {
 	#OK
@@ -639,7 +627,7 @@ sub remove_duplicate_ways # calls find_connections
 	die "no nodes " unless @relnodes;
 	warn "relation $rel had ". join (",",@relnodes). "\n" if $debug;
 	# now rotate the relation until we find a point used by many 
-	@relnodes=rotate_relation @relnodes;	
+#	@relnodes=rotate_relation @relnodes;	
 
 	warn "relation $rel has now ". join (",",@relnodes). "\n" if $debug;
 	warn "relation $rel has now range:". join (",",$relnodes[0],$relnodes[-1]) . "\n" if $debug;
@@ -669,9 +657,10 @@ sub remove_duplicate_ways # calls find_connections
 		warn "count($count) $arccount ne $otherway, going to make new way $rel contains" . join (",",@newpoints) . "\n" if $debug;
 		
 		$count++;	     
+		push @newpoints,$nd;
 		my $newway=make_new_way( $lastway, @newpoints	  );
 
-		@newpoints = (); # RESET
+		@newpoints = ($nd); # RESET and start with the last one!
 		report_way($newway); # created new way
 
 		if ($firstnewway ==0)
@@ -681,7 +670,7 @@ sub remove_duplicate_ways # calls find_connections
 		}
 		if ($lastnewway !=0) # if we are not at the first way, connect previous
 		{
-		    connect_way($lastnewway,$newway); # connect the end of the last new way to the begin of the new one
+		  connect_way($lastnewway,$newway); # connect the end of the last new way to the begin of the new one
 		}
 		$lastnewway=$newway; # store the last way to glue them together 
 		
@@ -838,7 +827,6 @@ sub process_waynd
 	#my $lastinway=$ways{$current_way}->{nodes}[-1] || 0;
 	# the first is missing
 	my $lastitem = $ways{$current_way}->{nodes}[-1]; # the last item in the way
-	
 	if(!$lastitem)
 	{
 	    warn "lastitem is null for $current_way" if $debug;
@@ -853,23 +841,18 @@ sub process_waynd
 	    if ($lastitem ne $id) # not the last in the way
 	    {
 		my $other=0;
-			    
 		# build up the new structure
 		add_arc_to_node($lastitem, $id, $current_way);
-		
 		#  if (checkpair($lastinway, $id)) # remove all duplicate ways
 		{
 		    warn "in way $current_way adding pair lastitem:$lastitem, node:$id\n" if $debug;
-		    
 		    append_node_to_way($current_way,$id);
-		    
 		    # only store the last node seen if it is not a duplicate
 		    $last_node_seen=$id;
-		    
 		}# if check pair
 
 	    }
-	} # 
+	} 
     }
     else
     {
@@ -891,8 +874,8 @@ sub node
     my $slon=sprintf("%0.${tolerance}f",$lon);
     if ($nodes{$slat}{$slon})
     {
-	my $old=$nodes{$slat}{$slon};	
-	$replace{$id}=$old;
+      my $old=$nodes{$slat}{$slon};
+      $replace{$id}=$old;
 	return $old;
     }
     else
@@ -917,19 +900,14 @@ sub consumeattrs
     if (s/uid=${QUOTE}\d+${QUOTE}\s?//)
     {}
     if (s/user=${QUOTE}[\w\s]+${QUOTE}\s*//)
-    {
-    }
-    
+    {    }
     if (s/visible=${QUOTE}(true|false)${QUOTE}\s*//)
-    {
-	
-    }
-    
+    {    }
     if (s/action=${QUOTE}modify${QUOTE}\s*//)
     {
 #	    warn "check $_" if $debug;
     }
-    
+
     if (/action=${QUOTE}delete${QUOTE}/)
     {
 	#next; # skip this
@@ -1142,17 +1120,14 @@ sub emit_osm
 		# have we emitted the node yet?
 
 		  my $acount  =count_arcs_in_node($nd);
-		  
 		  warn "$nd in $newway has $acount arcs\n" if $debug;
 
-			    
 		if (!$seen{$nd}++) {		    
 		  my ($lat,$lon)=@{$nodeids{$nd}};
 		  print OUT "<node id=\'$nd\' lat='$lat' lon='$lon'>\n".
 		    "<tag k='_ID' v='$nd' />\n".
 		      "</node>\n";
 		}
-			
 	      }
 	      # emit new way------------------------ 
 	      print OUT "<way id='$newway'>\n";
