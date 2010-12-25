@@ -1,4 +1,28 @@
 
+=head
+
+    shp2relations convert shp2osm output into usable relations for osm
+    Copyright (C) 2010  "James Michael DuPpont" <jamesmikedupont@googlemail.com>
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as
+    published by the Free Software Foundation, either version 3 of the
+    License, or (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    http://www.gnu.org/licenses/agpl-3.0.html
+
+usage :
+    perl prepareupload.pl OUTFILE.osm INFILE.osm
+
+=cut
+
 use strict;
 use warnings;
 
@@ -1414,27 +1438,27 @@ sub check_waypair
 
 
 ##################### MAIN ROUTINE TO CLEAN
-  
-  sub main
+
+sub main
+{
+    my $outfile=shift @_;
+    die "$outfile exists already" if -f $outfile;
+    foreach my $file (@_)
     {
-      my $outfile=shift @_;
-      
-      foreach my $file (@_)
-	{
-	  parse $file;
-	}
-
-      transfer_ways; # fills out the rels list.
-      reset_seen; # reset the seen list
-      remove_duplicate_ways;
-
-      # now merge together new ways that have the same attributes
+	parse $file;
+    }
+    
+    transfer_ways; # fills out the rels list.
+    reset_seen; # reset the seen list
+    remove_duplicate_ways;
+    
+    # now merge together new ways that have the same attributes
 #      simplify_relationships; 
 # now we have the new ways split up, but still have segments that should be merged.
-      emit_osm $outfile;
-      
-    };
+    emit_osm $outfile;
+    
+};
 
-    Formatter::begin;
-    main @ARGV;
-    Formatter::end;
+Formatter::begin;
+main @ARGV;
+Formatter::end;
