@@ -711,29 +711,6 @@ sub connect_way_loop
     # make sure the first item of the next way is the last of the prev
 }
 
-# sub process_leftovers
-#   {
-#     my $rel=shift;
-#     my $lastway=shift;
-#     my $count=shift;
-#     my $firstnewway=shift;
-#     my @newpoints=@_;
-#     # these leftovers should be tried to be combined with the rest of the nodes
-#     # have a situation where these nodes should be joined with the rest of the nodes.
-#     my $newway= make_new_way($lastway,@newpoints);	
-#     Formatter::warn "created final way";
-#     report_way($newway); # created new way
-#     #	    connect_way($lastnewway,$newway); # connect the end of the last new way to the begin of the new one
-#     #	    connect_way($newway,$firstnewway); # connect the end of the new way to the begin of the first
-
-#     Formatter::warn "rel $rel has $count parts\n";
-#     if ($count ==0) # no ways split in the relation, it is a loop to itself
-#       {
-# 	Formatter::warn "Rel $rel is connected to itself via way  $newway\n";
-# 	#		connect_way_loop($newway,$newway); # connect the end of the new way to the begin of the first
-#       }
-#   }
-
 sub make_new_way_string
     {
 	my $lastway=shift;
@@ -821,8 +798,35 @@ sub maybe_append_final_point
     my $rel=shift;
     my $nd=shift;
     my @newpoints=@_;
+
+    my $count1=count_arcs_in_node ($nd);
+    my $count2=count_arcs_in_node3 ($nd);
+
+    if ($count2 > 1)
+    {
+	# only append it if it has more than
+	Formatter::warn "DO append NODE:$nd to REL:$rel count1:$count1 count2:$count2\n" if $debug;
+	return (@newpoints,$nd);
+    }
+    else
+    {
+	Formatter::warn "DONT append NODE:$nd to REL:$rel count1:$count1 count2:$count2\n" if $debug;
+	return (@newpoints);
+    }
+	
+    
+
+}
+
+
+sub maybe_prepend_first_point
+{
+    my $rel=shift;
+    my $nd=shift;
+    my @newpoints=@_;
     return (@newpoints,$nd);
 }
+
 
 sub process_nodes_loop
   {
@@ -1326,38 +1330,45 @@ sub emit_osm
 =cut
 
 	foreach my $newway (@{$waymapping{$oldway}}	) {
-	  # add the new ways
-	  push @ways,$newway;
-	  if (!$seen{$newway}++) {
-	    Formatter::warn "found new way $newway from old way $oldway" if $debug;
-	    #		if (!$fail)
+
+	    
+	    my @nodes = (@{$ways{$newway}->{nodes}});
+	    
+	    if (scalar(@nodes)>1)
 	    {
-	      foreach my $nd (@{$ways{$newway}->{nodes}}) {
-		# have we emitted the node yet?
+		# add the new ways
+		push @ways,$newway;
+		if (!$seen{$newway}++) {
+		    Formatter::warn "found new way $newway from old way $oldway" if $debug;
+		    #		if (!$fail)
+		    {
+			foreach my $nd (@nodes) {
+			    # have we emitted the node yet?
+			    
+			    my $acount  =count_arcs_in_node($nd);
+			    Formatter::warn "$nd in $newway has $acount arcs\n" if $debug;
 
-		  my $acount  =count_arcs_in_node($nd);
-		  Formatter::warn "$nd in $newway has $acount arcs\n" if $debug;
-
-		if (!$seen{$nd}++) {		    
+			    if (!$seen{$nd}++) {		    
 		  my ($lat,$lon)=@{$nodeids{$nd}};
 		  print OUT "<node id=\'$nd\' lat='$lat' lon='$lon'>\n".
-		    "<tag k='_ID' v='$nd' />\n".
+		      "<tag k='_ID' v='$nd' />\n".
 		      "</node>\n";
-		}
-	      }
-	      # emit new way------------------------ 
-	      print OUT "<way id='$newway'>\n";
-	      foreach my $nd (@{$ways{$newway}->{nodes}}) {
-		print OUT "<nd ref='$nd'/>\t";
-	      }
-	      print OUT "<tag k='is_in:country' v='Colombia'/>\n".
+			    }
+			}
+			# emit new way------------------------ 
+			print OUT "<way id='$newway'>\n";
+			foreach my $nd (@nodes) {
+			    print OUT "<nd ref='$nd'/>\t";
+			}
+			print OUT "<tag k='is_in:country' v='Colombia'/>\n".
 		"<tag k='_ID' v='$newway' />\n" .
-		  "</way>\n";
-	    }
-	  } else {
-	    #reusing the way
-	  }
-	}			## after all new ways
+		"</way>\n";
+		    }
+		} else {
+		    #reusing the way
+		}
+	    }	# if more than one
+	}		## after all new ways
 	
       }				# after old ways
       # relationships
@@ -1401,37 +1412,6 @@ sub check_waypair
 	
   }
 
-sub simplify_relationships
-{
-    # for all the relationships
-     # for all the ways in a relationship
-      # look if we can merge the ways
-    Formatter::warn "simplify_relationships";
-    foreach my $rel (keys %{rels}) {
-      my @ways;
-      foreach my $oldway ( @{$rels{$rel}}) {
-	foreach my $newway (@{$waymapping{$oldway}}	) {
-	  # add the new ways
-
-	  if (!$seen{$newway}++) {
-	      push @ways,$newway;	      
-	  }
-	}
-      }
-      # now we look at the pairs of ways
-      push @ways,$ways[0]; # loop them
-      my $last=0;
-      foreach (@ways)
-      {
-	  if ($last)
-	  {
-	      check_waypair($last,$_);
-	  }
-	  $last=$_;
-      }
-            
-    }
-  }
 
 ##################### MAIN ROUTINE TO CLEAN
   
