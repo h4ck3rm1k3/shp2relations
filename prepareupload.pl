@@ -261,7 +261,7 @@ sub append_node_to_way
     if ($waymapping{$way_id})
       {
 #	push @newways, @{$waymapping{$way_id}};
-	Formatter::warn "newways LIST:".  join(",",@newways);
+#	Formatter::warn "newways LIST:".  join(",",@newways);
       }
 
     foreach my $way_id (@newways)
@@ -269,7 +269,7 @@ sub append_node_to_way
 
 	if ($nodes[0] != $last)
 	  {
-	    Formatter::warn "appending adding LIST:". join (",",@nodes) . " to $way_id\n";
+#	    Formatter::warn "appending adding LIST:". join (",",@nodes) . " to $way_id\n";
 
 	    foreach  my $nd (@nodes)
 	    {
@@ -290,7 +290,7 @@ sub append_node_to_way
 	  }
 	else
 	  {
-	    Formatter::warn "ERROR: not appending LIST:". join (",",@nodes) . " to $way_id\n";
+#	    Formatter::warn "ERROR: not appending LIST:". join (",",@nodes) . " to $way_id\n";
 	    report_way2 ($way_id);
 	  }
       }
@@ -307,20 +307,20 @@ sub prepend_node_to_way
     if ($waymapping{$way_id})
       {
 #	push @newways, @{$waymapping{$way_id}};
-	Formatter::warn "newways LIST:".  join(",",@newways);
+#	Formatter::warn "newways LIST:".  join(",",@newways);
       }
 
     foreach my $way_id (@newways)
       {
 	if ($nodes[-1] != $ways{$way_id}->{nodes}->[0])
 	  {
-	    Formatter::warn "prepending adding LIST:". join (",",@nodes) . " to $way_id";
+#	    Formatter::warn "prepending adding LIST:". join (",",@nodes) . " to $way_id";
 	    unshift @{$ways{$way_id}->{nodes}},@nodes;
 	    report_way2 ($way_id);
 	  }
 	else
 	  {
-	    Formatter::warn "ERROR : not prepending LIST:". join (",",@nodes) . " to $way_id";
+#	    Formatter::warn "ERROR : not prepending LIST:". join (",",@nodes) . " to $way_id";
 	    report_way2 ($way_id);
 	  }
       }
@@ -415,10 +415,11 @@ sub save_waystring
 my %reversed_strings;
 
 
-sub make_new_way
+sub make_new_ways
 {
     my $wayid =shift||die "no way id "; # old way
-
+    my $ret=0;
+    my @ret;
     my %seennd;
     my @newlist;
     map {if (!$seennd{$_}++){push (@newlist,$_);} } @_;  # all the new points to add 
@@ -435,10 +436,35 @@ sub make_new_way
 	    my $oldid=lookup_waystring(@newlist);
 	    if (!$oldid)
 	    {
+		my @oldlist=@newlist;
+
+		while (scalar(@newlist) > 1500)
+		{
+
+		    $newids--; # allocate a new id for the way
+		    push @ret,$newids;
+
+		    Formatter::warn "Allocating new wayid $newids";
+		    my $lastinway=0;
+		    for my $x (1 ... 1500)
+		    {
+			my $n =shift @newlist;
+			$lastinway=$n;
+			append_node_to_way ($newids,$n);
+		    }
+		    unshift @newlist,$lastinway;# connect them
+		    push @{$waymapping{$wayid}},$newids; # map the old id onto the new
+#		    Formatter::warn "new way $newids contains LIST:" . join (",",@{$ways{$newids}->{nodes}}) . "\n" if $debug;
+		}
+
+		# the left overs 
 		$newids--; # allocate a new id for the way
+		push @ret,$newids;
+
+		Formatter::warn "Allocating new wayid $newids";
 		append_node_to_way ($newids,@newlist);
 		push @{$waymapping{$wayid}},$newids; # map the old id onto the new
-		Formatter::warn "new way $newids contains LIST:" . join (",",@{$ways{$newids}->{nodes}}) . "\n" if $debug;
+#		Formatter::warn "new way $newids contains LIST:" . join (",",@{$ways{$newids}->{nodes}}) . "\n" if $debug;
 
 		save_waystring($newids,@newlist)
 	    }
@@ -454,7 +480,7 @@ sub make_new_way
     {
 	Formatter::warn "Empty list $wayid called" if $debug;
     }
-    return $newids; # the new way
+    return @ret; # the list of new ways
 }
 
 
@@ -506,7 +532,8 @@ sub report_way2
     my $a=@{$ways{$way}->{nodes}}[0]||0;
     my $z=@{$ways{$way}->{nodes}}[-1]||0;
     my $str= join (",", @{$ways{$way}->{nodes}});
-    Formatter::warn "report way $way starts at $a and ends at $z\n details LIST:$str\n";
+    Formatter::warn "report way $way starts at $a and ends at $z\n";
+    #details LIST:$str\n";
 }
 
 sub scan_prepend
@@ -541,12 +568,12 @@ sub scan_attach # from find_connections
 		if ($waymapping{$i->[3]})
 		{
 		    push @newways, @{$waymapping{$i->[3]}};
-		    Formatter::warn "newway2 LIST:".  join(",",@newways);
+#		    Formatter::warn "newway2 LIST:".  join(",",@newways);
 		}
 		if ($waymapping{$i->[2]})
 		{
 		    push @newways, @{$waymapping{$i->[2]}};
-		    Formatter::warn "newways LIST:".  join(",",@newways);
+#		    Formatter::warn "newways LIST:".  join(",",@newways);
 		}
 		my $found=0;
 		foreach my $newway (@newways)
@@ -616,124 +643,36 @@ sub connect_way
 
     my $prev=shift;
     my $next=shift;
-    return;
-    return unless $prev;
-    return unless $next;
+#    return;
+    return warn "No prev" unless $prev;
+    return warn "No next" unless $next;
+#    find_connections $prev;
+#    find_connections $next;
+#    return;
 
-    find_connections $prev;
-    find_connections $next;
-    return;
+    my $b=@{$ways{$prev}->{nodes}}[0]; # beginning 
+    my $last=@{$ways{$prev}->{nodes}}[-1];  # last in previ 
 
-    if ($reversed_strings{$prev})
-    {
-	if ($reversed_strings{$next})
-	{
-	    Formatter::warn "REVERSED BOTH" if $debug;
 
-	}
-	else
-	{
-	    Formatter::warn "REVERSED PREV" if $debug;
-	}
-	
-    }
-    else
-    {
-	if ($reversed_strings{$next})
-	{
-	    
-	    Formatter::warn "REVERSED NEXT" if $debug;
-	}
-	else
-	{
-	    Formatter::warn "NOTHING REVERSED" if $debug;
-	}
-    }
-
-    my $b=@{$ways{$prev}->{nodes}}[0];
-    my $last=@{$ways{$prev}->{nodes}}[-1];
-    my $first=@{$ways{$next}->{nodes}}[0];
+    my $first=@{$ways{$next}->{nodes}}[0]; # first in next
     my $l=@{$ways{$next}->{nodes}}[-1];
-    Formatter::warn "checking if $prev ($b - $last) is connected to $next ($first - $l)\n" if $debug;
-    if ($b == $last)
-    {
-	Formatter::warn "repairing : prev is only one node, merge into the next\n" if $debug;
 
-	append_node_to_way ($next,$last);
-	report_way ($next);
-    }
-    elsif ($l == $first)
-    {
-	Formatter::warn "repairing : next is only one node, merge into the prev\n" if $debug;
+    Formatter::warn "CONNECTWAY: checking if $prev ($b - $last) is connected to $next ($first - $l)\n" if $debug;
 
-	append_node_to_way ($prev,$first);
-	report_way ($prev);
-    }
-    elsif ($last == $first)
+    if ($last == $l)
     {
-	#OK
-	Formatter::warn "repairing : last $last == first $first\n" if $debug;
+	#connected reversed
     }
     else
     {
-	if ($b != $first)
-	{
-	    # now we decide which one do do depending on who has more connections
-	    
-	    my $first_c= count_arcs_in_node2($first); 
-	    my $last_c = count_arcs_in_node2($last); 
-	    
-# first and last
-	    Formatter::warn "check_count $first has $first_c  and $last has $last_c\n" if $debug;
-	    if ($first_c > $last_c)
-	    {
-		Formatter::warn "repairing $prev ($b - $last) by appending $first to connect to $next ($first - $l)\n" if $debug;
-
-		append_node_to_way ($prev,$first);
-		report_way ($prev);
-	    }
-	    else
-	    {
-		Formatter::warn "repairing connecting $prev ($b - $last) by prepending $last to the next way $next ($first - $l)\n" if $debug;
-
-		prepend_node_to_way($next,$last);
-
-		report_way ($next);
-	    }
-	}	    
+	append_node_to_way ($prev,$first); # last to the first 
+#	append_node_to_way ($prev,$first); # last to the first 
     }
-
+    # we need to connect the last to the first
 
     # make sure the first item of the next way is the last of the prev
 }
 
-sub connect_way_loop
-{
-    my $prev=shift;
-    my $next=shift;
-    return unless $prev;
-    return unless $next;
-    my $b=@{$ways{$prev}->{nodes}}[0];
-    my $last=@{$ways{$prev}->{nodes}}[-1];
-    my $first=@{$ways{$next}->{nodes}}[0];
-    my $l=@{$ways{$next}->{nodes}}[-1];
-
-    if ($last == $first)
-    {
-	#OK
-    }
-    else
-    {
-	# if they originate from the same point, dont connect them
-
-	Formatter::warn "repairing loop $prev ($b - $last) by appending $first to connect to $next ($first - $l)\n" if $debug;
-
-	append_node_to_way ($prev,$first);
-
-    }    
-
-    # make sure the first item of the next way is the last of the prev
-}
 
 sub make_new_way_string
     {
@@ -745,13 +684,14 @@ sub make_new_way_string
 	my @newpoints=@_;
 
       # is the relation the same?
-      Formatter::warn "  going to make new way $rel contains LIST:" . join (",",@newpoints) . "\n" if $debug;
+	Formatter::warn "  going to make new way $rel \n";
+	  #contains LIST:" . join (",",@newpoints) . "\n" if $debug;
 	#$count++;
       # FOR SOME WAYS, we need to add the node to the way, 
       # for others, we nee to add the node to the next way.
 
-      my $newway=make_new_way( $lastway, @newpoints	  );
-      my $last=$newpoints[-1];
+      my @newways=make_new_ways( $lastway, @newpoints	  ); # this could create many new ways
+      my $last=$newpoints[-1]; 
 
 	@newpoints = ($last); # RESET and start with the last one!
 	if ($nd)
@@ -759,70 +699,79 @@ sub make_new_way_string
 	    push @newpoints,$nd;
 	}
 
-	report_way($newway); # created new way
-      if ($firstnewway ==0)
-	{
-	  Formatter::warn "setting firstnew way $newway\n" if $debug;
-	  $firstnewway=$newway; # record the first way created for final loop checking, all rels are closed
-	}
-      if ($lastnewway !=0) # if we are not at the first way, connect previous
-	{
-	  #		  connect_way($lastnewway,$newway); # connect the end of the last new way to the begin of the new one
-	}
-      $lastnewway=$newway; # store the last way to glue them together 
-	
 
+#	report_way($newway); # created new way
+	if (@newways)
+	{
+	    if ($firstnewway ==0)
+	    {
+		Formatter::warn "setting firstnew way $newways[0]\n" if $debug;
+		$firstnewway=$newways[0]; # record the first way created for final loop checking, all rels are closed
+	    }
+	    
+	    if ($lastnewway !=0) # if we are not at the first way, connect previous
+	    {
+#		connect_way($lastnewway,$newways[0]); # connect the end of the first in  new way to the begin of the new one
+	    }
+	    $lastnewway=$newways[-1]; # store the last way to glue them together 
+	}
+	
+	
 	return ($firstnewway,$lastnewway,@newpoints);
     };
 
 
 # for leftovers
 sub make_new_way_string_last
+{
+
+    my $lastway=shift;
+    my $rel=shift;
+    my $nd=shift;
+    my $firstnewway=shift;
+    my $lastnewway=shift;
+    my @newpoints=@_;
+
+    Formatter::warn "  make_new_way_string_last (last way:$lastway,rel:$rel,node:$nd,firstw:$firstnewway,lastw:$lastnewway)\n" if $debug;
+    
+    # is the relation the same?
+#      Formatter::warn "  going to make new way $rel contains LIST:" . join (",",@newpoints) . "\n" if $debug;
+    #$count++;
+    # FOR SOME WAYS, we need to add the node to the way, 
+    # for others, we nee to add the node to the next way.
+    
+    my @newways=make_new_ways( $lastway, @newpoints	  );
+    my $last=$newpoints[-1];
+    
+    @newpoints = ($last); # RESET and start with the last one!
+    if ($nd)
     {
-	my $lastway=shift;
-	my $rel=shift;
-	my $nd=shift;
-	my $firstnewway=shift;
-	my $lastnewway=shift;
-	my @newpoints=@_;
+	push @newpoints,$nd;
+    }
+    
+#    report_way($newway); # created new way
+    if ($firstnewway ==0)
+    {
+	Formatter::warn "setting firstnew way $newways[0]\n" if $debug;
+	$firstnewway=$newways[0]; # record the first way created for final loop checking, all rels are closed
+    }
+    if ($lastnewway !=0) # if we are not at the first way, connect previous
+    {
+#	connect_way($lastnewway,$newways[0]); # connect the end of the last new way to the begin of the new one
+    }
+    $lastnewway=$newways[-1]; # store the last way to glue them together 
+    
+    
+    return ($firstnewway,$lastnewway,@newpoints);
+};
 
-      # is the relation the same?
-      Formatter::warn "  going to make new way $rel contains LIST:" . join (",",@newpoints) . "\n" if $debug;
-	#$count++;
-      # FOR SOME WAYS, we need to add the node to the way, 
-      # for others, we nee to add the node to the next way.
-
-      my $newway=make_new_way( $lastway, @newpoints	  );
-      my $last=$newpoints[-1];
-
-	@newpoints = ($last); # RESET and start with the last one!
-	if ($nd)
-	{
-	    push @newpoints,$nd;
-	}
-
-	report_way($newway); # created new way
-      if ($firstnewway ==0)
-	{
-	  Formatter::warn "setting firstnew way $newway\n" if $debug;
-	  $firstnewway=$newway; # record the first way created for final loop checking, all rels are closed
-	}
-      if ($lastnewway !=0) # if we are not at the first way, connect previous
-	{
-	  #		  connect_way($lastnewway,$newway); # connect the end of the last new way to the begin of the new one
-	}
-      $lastnewway=$newway; # store the last way to glue them together 
-	
-
-	return ($firstnewway,$lastnewway,@newpoints);
-    };
-
+## this needs to also check if the node is the last in a relationship
+#
 sub maybe_append_final_point
 {
     my $rel=shift;
     my $nd=shift;
     my @newpoints=@_;
-
     my $count1=count_arcs_in_node ($nd);
     my $count2=count_arcs_in_node3 ($nd);
 
@@ -836,36 +785,26 @@ sub maybe_append_final_point
     {
 	Formatter::warn "DONT append NODE:$nd to REL:$rel count1:$count1 count2:$count2\n" if $debug;
 	return (@newpoints);
-    }
-	
-    
-
+    }      
 }
 
 
-sub maybe_prepend_first_point
-{
-    my $rel=shift;
-    my $nd=shift;
-    my @newpoints=@_;
-    return (@newpoints,$nd);
-}
-
-
-sub process_nodes_loop
+sub process_nodes_loop # from remove_duplicate_ways
   {
     my $rel=shift;
     my $lastway=shift;
+    my $firstnewway=shift;
+    my $lastnewway=shift;
+
+
     my @relnodes=@_;
 
     my $count =0;
     my $length =scalar(@relnodes);
     my $lastnode=0;
-    Formatter::warn "relation $rel contains LIST:" . join (",",@relnodes) . "\n" if $debug;
+#    Formatter::warn "relation $rel contains LIST:" . join (",",@relnodes) . "\n" if $debug;
     my $otherway=0;
 
-    my $lastnewway=0; # the last new way created in this relation
-    my $firstnewway=0;# the first one, it will be connected to the final one
 
     my @newpoints=();
     while (@relnodes)
@@ -892,7 +831,7 @@ sub process_nodes_loop
 	  }
 	else
 	  {
-	    Formatter::warn "dont create ways with only one point LIST:" . join (",",@newpoints) . "\n"
+#	    Formatter::warn "dont create ways with only one point LIST:" . join (",",@newpoints) . "\n"
 	  }
 	## add the new points after the decisions made
 	if (@newpoints)
@@ -915,7 +854,7 @@ sub process_nodes_loop
     # if there are any left over , lets truncate the last parts if they have a different count
     ($firstnewway,$lastnewway,@newpoints) =   make_new_way_string_last($lastway,$rel,0,$firstnewway,$lastnewway,@newpoints);
 
-    return @newpoints;
+    return ($firstnewway,$lastnewway,@newpoints);
   }
 
   
@@ -943,11 +882,11 @@ sub remove_duplicate_ways # calls find_connections
 	    $lastway=$wayid;
 	}
 	die "no nodes " unless @relnodes;
-	Formatter::warn "relation $rel had LIST:". join (",",@relnodes). "\n" if $debug;
+#	Formatter::warn "relation $rel had LIST:". join (",",@relnodes). "\n" if $debug;
 	# now rotate the relation until we find a point used by many 
 #	@relnodes=rotate_relation @relnodes;	
 
-	Formatter::warn "relation $rel has now LIST:". join (",",@relnodes). "\n" if $debug;
+#BIG LIST	Formatter::warn "relation $rel has now LIST:". join (",",@relnodes). "\n" if $debug;
 	Formatter::warn "relation $rel has now range LIST:". join (",",$relnodes[0],$relnodes[-1]) . "\n" if $debug;
 	Formatter::warn "last way is $lastway\n" if $debug;
 
@@ -957,14 +896,15 @@ sub remove_duplicate_ways # calls find_connections
 	##TODO
 #    my $rel=shift;
 #    my $lastway=shift;
-	@newpoints = process_nodes_loop($rel,$lastway, @relnodes);
+	($firstnewway,$lastnewway,@newpoints) =  process_nodes_loop($rel,$lastway,$firstnewway,$lastnewway, @relnodes);
 	
-	Formatter::warn "leftovers for rel:$rel lastway:$lastway   contains LIST:" . join (",",@newpoints) . "\n" if $debug;
+#	Formatter::warn "leftovers for rel:$rel lastway:$lastway   contains LIST:" . join (",",@newpoints) . "\n" if $debug;
 	
 	my $loop =$#newpoints >0;
 	while ($loop)
 	{
-	    my @newpointsnew = process_nodes_loop($rel,$lastway, @newpoints);
+	    my @newpointsnew;
+	    ($firstnewway,$lastnewway,@newpointsnew)= process_nodes_loop($rel,$lastway,$firstnewway,$lastnewway, @newpoints);
 
 	    if (@newpointsnew==@newpoints)
 	    {
@@ -976,7 +916,7 @@ sub remove_duplicate_ways # calls find_connections
 	    }
 	    @newpoints=@newpointsnew;
 	    Formatter::warn "leftover loop";
-	    Formatter::warn "LIST:" . join ",",@newpoints;
+#	    Formatter::warn "LIST:" . join ",",@newpoints;
 	}
 
 	# close the loop finally
@@ -998,7 +938,7 @@ sub begin_way
 sub end_way
 {
     Formatter::warn "closing current way:$current_way" if $debug;
-    Formatter::warn "Way $current_way contains LIST:" . join (",",@{$ways{$current_way}->{nodes}}) . "\n" if $debug;
+#    Formatter::warn "Way $current_way contains LIST:" . join (",",@{$ways{$current_way}->{nodes}}) . "\n" if $debug;
 
     $current_way=undef;
     $last_node_seen=0;
@@ -1022,6 +962,7 @@ sub post_process_way
     }
     else
     {
+	Formatter::warn "adding way $wayid into in rel $rel";
 	$ways{$wayid}->{relationship}=$rel;
     }
 }
@@ -1298,15 +1239,6 @@ sub parse
 }
 
 
-=head2
-
-    duplicate way algorithm
-
-    1. each node has a pointer to a set of arc, the next node.
-    2. if the next node points back to this node, it is duplicate, we remove it.
-
-=cut
-
 sub transfer_ways
 {
     foreach my $wayid (sort keys %ways)
@@ -1322,8 +1254,11 @@ sub transfer_ways
 	}
 	else
 	{
-	    Formatter::warn "no rel found, must be new" if $debug;
-	    Formatter::warn Dumper($ways{$wayid}) if $debug;
+	    Formatter::warn "no rel found, must be new" if $debug;	    
+#	    Formatter::warn Dumper($ways{$wayid}) if $debug;
+	    Formatter::warn Dumper(\%ways) if $debug;
+	    Formatter::warn Dumper(\%rels) if $debug;
+	    Formatter::warn Dumper(\%waymapping) if $debug;
 	}
     }	
 }
@@ -1353,14 +1288,12 @@ sub emit_osm
 
 =cut
 
-	foreach my $newway (@{$waymapping{$oldway}}	) {
-
-	    
+	foreach my $newway (@{$waymapping{$oldway}}	) 
+	{    
 	    my @nodes = (@{$ways{$newway}->{nodes}});
-	    
+	    my $n=0;
 	    if (scalar(@nodes)>1)
 	    {
-		# add the new ways
 		push @ways,$newway;
 		if (!$seen{$newway}++) {
 		    Formatter::warn "found new way $newway from old way $oldway" if $debug;
@@ -1369,8 +1302,6 @@ sub emit_osm
 			foreach my $nd (@nodes) {
 			    # have we emitted the node yet?
 			    
-			    my $acount  =count_arcs_in_node($nd);
-			    Formatter::warn "$nd in $newway has $acount arcs\n" if $debug;
 
 			    if (!$seen{$nd}++) {		    
 		  my ($lat,$lon)=@{$nodeids{$nd}};
@@ -1379,6 +1310,9 @@ sub emit_osm
 		      "</node>\n";
 			    }
 			}
+
+
+			###
 			# emit new way------------------------ 
 			print OUT "<way id='$newway'>\n";
 			foreach my $nd (@nodes) {
